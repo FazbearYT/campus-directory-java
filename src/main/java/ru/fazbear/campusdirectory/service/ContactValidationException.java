@@ -1,9 +1,13 @@
 package ru.fazbear.campusdirectory.service;
 
+import java.io.Serial;
 import java.util.List;
 
 public final class ContactValidationException extends IllegalArgumentException {
-    private final List<String> errors;
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    private final transient List<String> errors;
 
     public ContactValidationException(List<String> errors) {
         super(String.join("; ", errors));
