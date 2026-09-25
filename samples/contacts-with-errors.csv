@@ -1,0 +1,6 @@
+type;name;phone;email;organization;position;extension
+PERSONAL;Анна Смирнова;+7 (913) 555-12-34;anna@example.com;;;
+UNKNOWN;Неизвестный тип;+7 900 000-00-00;;;;
+CORPORATE;Иван Петров;+7 (383) 200-10-20;ivan.petrov@example.com;Технопарк;Инженер;не число
+PERSONAL;Контакт без телефона;;;;;
+EMERGENCY;Единая служба спасения;112;;МЧС России;;

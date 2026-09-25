@@ -1,0 +1,6 @@
+type;name;phone;email;organization;position;extension
+PERSONAL;Анна Смирнова;+7 (913) 555-12-34;anna@example.com;;;
+CORPORATE;Иван Петров;+7 (383) 200-10-20;ivan.petrov@example.com;Технопарк Новосибирск;Инженер;214
+CORPORATE;Мария Волкова;+7 (383) 200-10-21;maria.volkova@example.com;НГУЭУ;Методист;305
+EMERGENCY;Единая служба спасения;112;;МЧС России;;
+EMERGENCY;Диспетчерская кампуса;+7 (383) 243-94-42;;Университет;;

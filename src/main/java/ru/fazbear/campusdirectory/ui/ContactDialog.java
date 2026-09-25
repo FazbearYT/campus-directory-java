@@ -13,7 +13,10 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
@@ -36,12 +39,13 @@ public final class ContactDialog {
     private final Label extensionLabel = new Label("Внутренний номер:");
     private final Label errorLabel = new Label();
     private final ButtonType saveButton = new ButtonType("Сохранить", ButtonBar.ButtonData.OK_DONE);
+    private final ButtonType cancelButton = new ButtonType("Отмена", ButtonBar.ButtonData.CANCEL_CLOSE);
 
     private ContactDialog(Window owner, Contact contact) {
         dialog.initOwner(owner);
         dialog.setTitle(contact == null ? "Добавление контакта" : "Изменение контакта");
         dialog.setHeaderText(contact == null ? "Новый редактируемый контакт" : contact.getName());
-        dialog.getDialogPane().getButtonTypes().addAll(saveButton, ButtonType.CANCEL);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButton, cancelButton);
 
         typeBox.setItems(FXCollections.observableArrayList(ContactType.PERSONAL, ContactType.CORPORATE));
         typeBox.getSelectionModel().select(ContactType.PERSONAL);
@@ -99,6 +103,11 @@ public final class ContactDialog {
         var grid = new GridPane();
         grid.setHgap(12);
         grid.setVgap(10);
+        var labelColumn = new ColumnConstraints();
+        var fieldColumn = new ColumnConstraints();
+        fieldColumn.setHgrow(Priority.ALWAYS);
+        fieldColumn.setFillWidth(true);
+        grid.getColumnConstraints().addAll(labelColumn, fieldColumn);
 
         grid.addRow(0, new Label("Тип:"), typeBox);
         grid.addRow(1, new Label("Имя:"), nameField);
@@ -111,6 +120,7 @@ public final class ContactDialog {
         for (Node node : grid.getChildren()) {
             if (node instanceof TextField || node instanceof ComboBox<?>) {
                 GridPane.setFillWidth(node, true);
+                ((Region) node).setMaxWidth(Double.MAX_VALUE);
             }
         }
         return grid;
