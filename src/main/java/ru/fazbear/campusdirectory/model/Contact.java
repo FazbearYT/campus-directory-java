@@ -9,10 +9,10 @@ public abstract class Contact {
     private final String organization;
 
     protected Contact(String name, String phone, String email, String organization) {
-        this.name = normalize(name);
-        this.phone = normalize(phone);
-        this.email = normalize(email);
-        this.organization = normalize(organization);
+        this.name = normalize(name, "name");
+        this.phone = normalize(phone, "phone");
+        this.email = normalize(email, "email");
+        this.organization = normalize(organization, "organization");
     }
 
     public abstract ContactType getType();
@@ -33,16 +33,8 @@ public abstract class Contact {
         return organization;
     }
 
-    public String getPosition() {
-        return "";
-    }
-
-    public String getExtensionText() {
-        return "";
-    }
-
-    private static String normalize(String value) {
-        return value == null ? "" : value.trim();
+    private static String normalize(String value, String fieldName) {
+        return Objects.requireNonNull(value, fieldName + " must not be null").strip();
     }
 
     @Override

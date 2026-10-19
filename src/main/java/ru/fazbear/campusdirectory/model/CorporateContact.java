@@ -16,7 +16,7 @@ public final class CorporateContact extends Contact implements Editable {
             int extension
     ) {
         super(name, phone, email, organization);
-        this.position = position == null ? "" : position.trim();
+        this.position = Objects.requireNonNull(position, "position must not be null").strip();
         this.extension = extension;
     }
 
@@ -25,18 +25,12 @@ public final class CorporateContact extends Contact implements Editable {
         return ContactType.CORPORATE;
     }
 
-    @Override
     public String getPosition() {
         return position;
     }
 
     public int getExtension() {
         return extension;
-    }
-
-    @Override
-    public String getExtensionText() {
-        return Integer.toString(extension);
     }
 
     @Override

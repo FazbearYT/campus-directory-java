@@ -240,8 +240,13 @@ public final class ContactCsvService {
         fields.add(contact.getPhone());
         fields.add(contact.getEmail());
         fields.add(contact.getOrganization());
-        fields.add(contact.getPosition());
-        fields.add(contact.getExtensionText());
+        if (contact instanceof CorporateContact corporate) {
+            fields.add(corporate.getPosition());
+            fields.add(Integer.toString(corporate.getExtension()));
+        } else {
+            fields.add("");
+            fields.add("");
+        }
         return fields.stream().map(this::escape).reduce((left, right) -> left + DELIMITER + right).orElse("");
     }
 

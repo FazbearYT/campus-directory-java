@@ -27,6 +27,7 @@ import ru.fazbear.campusdirectory.io.ContactCsvException;
 import ru.fazbear.campusdirectory.io.ContactCsvService;
 import ru.fazbear.campusdirectory.io.CsvLoadResult;
 import ru.fazbear.campusdirectory.model.Contact;
+import ru.fazbear.campusdirectory.model.CorporateContact;
 import ru.fazbear.campusdirectory.model.Editable;
 import ru.fazbear.campusdirectory.service.ContactDirectory;
 import ru.fazbear.campusdirectory.ui.ContactDialog;
@@ -99,8 +100,18 @@ public final class ContactDirectoryApp extends Application {
         addColumn("Телефон", 150, Contact::getPhone);
         addColumn("E-mail", 190, Contact::getEmail);
         addColumn("Организация", 180, Contact::getOrganization);
-        addColumn("Должность", 150, Contact::getPosition);
-        addColumn("Внутренний №", 110, Contact::getExtensionText);
+        addColumn(
+                "Должность",
+                150,
+                contact -> contact instanceof CorporateContact corporate ? corporate.getPosition() : ""
+        );
+        addColumn(
+                "Внутренний №",
+                110,
+                contact -> contact instanceof CorporateContact corporate
+                        ? Integer.toString(corporate.getExtension())
+                        : ""
+        );
         table.setPlaceholder(new Label("Контакты пока не добавлены"));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
     }

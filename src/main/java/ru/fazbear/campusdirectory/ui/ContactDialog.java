@@ -3,6 +3,7 @@ package ru.fazbear.campusdirectory.ui;
 import java.util.List;
 import java.util.Optional;
 
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
@@ -132,8 +133,10 @@ public final class ContactDialog {
         phoneField.setText(contact.getPhone());
         emailField.setText(contact.getEmail());
         organizationField.setText(contact.getOrganization());
-        positionField.setText(contact.getPosition());
-        extensionField.setText(contact.getExtensionText());
+        if (contact instanceof CorporateContact corporate) {
+            positionField.setText(corporate.getPosition());
+            extensionField.setText(Integer.toString(corporate.getExtension()));
+        }
     }
 
     private void updateCorporateFields() {
@@ -147,6 +150,13 @@ public final class ContactDialog {
         extensionField.setVisible(corporate);
         extensionField.setManaged(corporate);
         errorLabel.setText("");
+
+        Platform.runLater(() -> {
+            var scene = dialog.getDialogPane().getScene();
+            if (scene != null && scene.getWindow() != null) {
+                scene.getWindow().sizeToScene();
+            }
+        });
     }
 
     private List<String> validateForm() {

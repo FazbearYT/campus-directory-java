@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ContactValidatorTest {
@@ -47,5 +48,14 @@ class ContactValidatorTest {
         var second = new CorporateContact("Иван", "+7 913 555-12-34", "", "Компания", "Инженер", 102);
 
         assertFalse(first.equals(second));
+    }
+
+    @Test
+    void normalizesWhitespaceWithoutHidingNullValues() {
+        var contact = new PersonalContact("  Анна  ", "  112  ", "", "");
+
+        assertEquals("Анна", contact.getName());
+        assertEquals("112", contact.getPhone());
+        assertThrows(NullPointerException.class, () -> new PersonalContact(null, "112", "", ""));
     }
 }
