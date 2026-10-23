@@ -22,7 +22,10 @@ public final class ContactDirectory {
     }
 
     public void update(int index, Contact replacement) {
-        Contact current = getAll().get(index);
+        update(getAll().get(index), replacement);
+    }
+
+    public void update(Contact current, Contact replacement) {
         requireEditable(current);
         requireEditable(replacement);
         requireValid(replacement);
@@ -51,6 +54,10 @@ public final class ContactDirectory {
 
     public TrieNodeSnapshot getTrieSnapshot() {
         return contacts.snapshot();
+    }
+
+    public TrieNodeSnapshot getTrieSnapshot(int maximumNodes) {
+        return contacts.snapshot(maximumNodes);
     }
 
     public void replaceAll(List<Contact> loadedContacts) {

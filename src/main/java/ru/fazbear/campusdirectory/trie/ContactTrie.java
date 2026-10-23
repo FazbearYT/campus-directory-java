@@ -102,7 +102,14 @@ public final class ContactTrie {
     }
 
     public synchronized TrieNodeSnapshot snapshot() {
-        return snapshot(root, "");
+        return snapshot(Integer.MAX_VALUE);
+    }
+
+    public synchronized TrieNodeSnapshot snapshot(int maximumNodes) {
+        if (maximumNodes < 1) {
+            throw new IllegalArgumentException("Количество отображаемых узлов должно быть положительным");
+        }
+        return snapshot(root, "", new SnapshotBudget(maximumNodes));
     }
 
     public synchronized int size() {
@@ -151,11 +158,19 @@ public final class ContactTrie {
         }
     }
 
-    private TrieNodeSnapshot snapshot(Node node, String path) {
-        var children = new TrieNodeSnapshot[node.childCount];
-        for (int index = 0; index < node.childCount; index++) {
+    private TrieNodeSnapshot snapshot(Node node, String path, SnapshotBudget budget) {
+        budget.useNode();
+        int visibleChildCount = Math.min(node.childCount, budget.remaining());
+        var children = new TrieNodeSnapshot[visibleChildCount];
+        int createdChildren = 0;
+        for (int index = 0; index < node.childCount && budget.hasSpace(); index++) {
             Node child = node.children[index];
-            children[index] = snapshot(child, path + child.symbol);
+            children[createdChildren++] = snapshot(child, path + child.symbol, budget);
+        }
+        if (createdChildren != children.length) {
+            var compactChildren = new TrieNodeSnapshot[createdChildren];
+            System.arraycopy(children, 0, compactChildren, 0, createdChildren);
+            children = compactChildren;
         }
         return new TrieNodeSnapshot(
                 node.symbol,
@@ -163,6 +178,7 @@ public final class ContactTrie {
                 node.contactCount,
                 node.subtreeContactCount,
                 wasVisited(path),
+                node.childCount - createdChildren,
                 children
         );
     }
@@ -330,6 +346,29 @@ public final class ContactTrie {
             var result = new String[size];
             System.arraycopy(values, 0, result, 0, size);
             return result;
+        }
+    }
+
+    private static final class SnapshotBudget {
+        private int remaining;
+
+        private SnapshotBudget(int maximumNodes) {
+            remaining = maximumNodes;
+        }
+
+        private void useNode() {
+            if (remaining == 0) {
+                throw new IllegalStateException("Trie snapshot budget exhausted");
+            }
+            remaining--;
+        }
+
+        private boolean hasSpace() {
+            return remaining > 0;
+        }
+
+        private int remaining() {
+            return remaining;
         }
     }
 }

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.PersonalContact;
+import ru.fazbear.campusdirectory.service.ContactGenerator;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -81,7 +82,43 @@ class ContactTrieTest {
         assertFalse(root.children()[0].children()[0].children()[0].visited());
     }
 
+    @Test
+    void limitsVisualizationSnapshotWithoutChangingCounts() {
+        var trie = new ContactTrie();
+        trie.add(contact("Анна"));
+        trie.add(contact("Борис"));
+
+        TrieNodeSnapshot root = trie.snapshot(2);
+
+        assertEquals(2, root.subtreeContactCount());
+        assertEquals(1, root.children().length);
+        assertEquals(1, root.omittedChildCount());
+    }
+
+    @Test
+    void handlesLargeGeneratedDatasetAndBoundedSnapshot() {
+        var trie = new ContactTrie();
+        Contact[] contacts = new ContactGenerator().generate(10_000);
+        for (Contact contact : contacts) {
+            trie.add(contact);
+        }
+
+        TrieNodeSnapshot root = trie.snapshot(500);
+
+        assertEquals(10_000, trie.size());
+        assertEquals(10_000, root.subtreeContactCount());
+        assertEquals(500, countNodes(root));
+    }
+
     private PersonalContact contact(String name) {
         return new PersonalContact(name, "112", "", "");
+    }
+
+    private int countNodes(TrieNodeSnapshot node) {
+        int count = 1;
+        for (TrieNodeSnapshot child : node.children()) {
+            count += countNodes(child);
+        }
+        return count;
     }
 }

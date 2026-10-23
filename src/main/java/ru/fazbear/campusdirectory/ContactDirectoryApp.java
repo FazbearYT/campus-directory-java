@@ -1,20 +1,29 @@
 package ru.fazbear.campusdirectory;
 
 import java.io.File;
+import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.function.Function;
 
 import javafx.application.Application;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.SimpleStringProperty;
+import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -30,13 +39,27 @@ import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.CorporateContact;
 import ru.fazbear.campusdirectory.model.Editable;
 import ru.fazbear.campusdirectory.service.ContactDirectory;
+import ru.fazbear.campusdirectory.service.ContactGenerator;
 import ru.fazbear.campusdirectory.ui.ContactDialog;
+import ru.fazbear.campusdirectory.ui.TrieCanvasView;
 
 public final class ContactDirectoryApp extends Application {
-    private final ContactDirectory directory = new ContactDirectory();
+    private static final int VISUALIZATION_NODE_LIMIT = 500;
+    private static final int MAXIMUM_GENERATED_CONTACTS = 100_000;
+
+    private ContactDirectory directory = new ContactDirectory();
     private final ContactCsvService csvService = new ContactCsvService();
+    private final ContactGenerator generator = new ContactGenerator();
     private final TableView<Contact> table = new TableView<>();
+    private final TrieCanvasView trieView = new TrieCanvasView();
+    private final TextField prefixField = new TextField();
     private final Label statusLabel = new Label();
+    private final Label operationLabel = new Label();
+    private final ProgressBar operationProgress = new ProgressBar(0);
+    private final Button cancelOperationButton = new Button("Отменить");
+    private final HBox dataActions = new HBox(10);
+    private final HBox searchActions = new HBox(10);
+    private Task<?> activeTask;
     private Stage stage;
 
     @Override
@@ -46,17 +69,50 @@ public final class ContactDirectoryApp extends Application {
 
         var title = new Label("Справочник контактов");
         title.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
-
         var subtitle = new Label(
-                "Личные и корпоративные контакты можно изменять. Аварийные загружаются только из CSV."
+                "Lab 2: собственное префиксное дерево, визуализация обхода и фоновые операции"
         );
         subtitle.setStyle("-fx-text-fill: #5f6368;");
-
         var header = new VBox(4, title, subtitle);
-        header.setPadding(new Insets(20, 20, 12, 20));
+        header.setPadding(new Insets(20, 20, 10, 20));
 
+        configureDataActions();
+        configureSearchActions();
+        configureOperationBar();
+
+        var tablePane = new VBox(8, searchActions, table);
+        VBox.setVgrow(table, Priority.ALWAYS);
+        var visualizationPane = new VBox(8, new Label("Внутреннее устройство Trie"), trieView);
+        VBox.setVgrow(trieView, Priority.ALWAYS);
+        tablePane.setPadding(new Insets(0, 8, 0, 20));
+        visualizationPane.setPadding(new Insets(0, 20, 0, 8));
+
+        var splitPane = new SplitPane(tablePane, visualizationPane);
+        splitPane.setDividerPositions(0.58);
+
+        var operationBar = new HBox(10, operationLabel, operationProgress, cancelOperationButton);
+        operationBar.setAlignment(Pos.CENTER_LEFT);
+        var footer = new VBox(6, statusLabel, operationBar);
+        footer.setPadding(new Insets(8, 20, 14, 20));
+
+        var root = new BorderPane();
+        root.setTop(new VBox(header, dataActions));
+        root.setCenter(splitPane);
+        root.setBottom(footer);
+
+        refreshAll();
+        stage.setTitle("Campus Directory — лабораторная работа №2");
+        stage.setMinWidth(1120);
+        stage.setMinHeight(680);
+        stage.setScene(new Scene(root, 1500, 860));
+        stage.show();
+    }
+
+    private void configureDataActions() {
         Button addButton = new Button("Добавить");
         Button editButton = new Button("Изменить");
+        Button deleteButton = new Button("Удалить");
+        Button generateButton = new Button("Сгенерировать");
         Button loadButton = new Button("Загрузить CSV");
         Button saveButton = new Button("Сохранить CSV");
 
@@ -65,53 +121,67 @@ public final class ContactDirectoryApp extends Application {
                 () -> !(table.getSelectionModel().getSelectedItem() instanceof Editable),
                 table.getSelectionModel().selectedItemProperty()
         ));
+        deleteButton.disableProperty().bind(Bindings.createBooleanBinding(
+                () -> !(table.getSelectionModel().getSelectedItem() instanceof Editable),
+                table.getSelectionModel().selectedItemProperty()
+        ));
 
         addButton.setOnAction(event -> addContact());
         editButton.setOnAction(event -> editContact());
+        deleteButton.setOnAction(event -> deleteContact());
+        generateButton.setOnAction(event -> generateContacts());
         loadButton.setOnAction(event -> loadContacts());
         saveButton.setOnAction(event -> saveContacts());
 
         var spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        var actions = new HBox(10, addButton, editButton, spacer, loadButton, saveButton);
-        actions.setAlignment(Pos.CENTER_LEFT);
-        actions.setPadding(new Insets(12, 20, 12, 20));
+        dataActions.getChildren().addAll(
+                addButton, editButton, deleteButton, spacer, generateButton, loadButton, saveButton
+        );
+        dataActions.setAlignment(Pos.CENTER_LEFT);
+        dataActions.setPadding(new Insets(10, 20, 12, 20));
+    }
 
-        statusLabel.setPadding(new Insets(8, 20, 12, 20));
+    private void configureSearchActions() {
+        prefixField.setPromptText("Имя или префикс");
+        HBox.setHgrow(prefixField, Priority.ALWAYS);
+        Button findButton = new Button("Найти точно");
+        Button autocompleteButton = new Button("Автодополнение");
+        Button showAllButton = new Button("Показать все");
+        findButton.setOnAction(event -> findContact());
+        autocompleteButton.setOnAction(event -> autocomplete());
+        showAllButton.setOnAction(event -> refreshAll());
+        prefixField.setOnAction(event -> autocomplete());
+        searchActions.getChildren().addAll(prefixField, findButton, autocompleteButton, showAllButton);
+        searchActions.setAlignment(Pos.CENTER_LEFT);
+    }
+
+    private void configureOperationBar() {
+        operationProgress.setPrefWidth(240);
+        operationProgress.setVisible(false);
+        operationProgress.setManaged(false);
+        cancelOperationButton.setVisible(false);
+        cancelOperationButton.setManaged(false);
+        cancelOperationButton.setOnAction(event -> {
+            if (activeTask != null) {
+                activeTask.cancel();
+            }
+        });
         statusLabel.setStyle("-fx-text-fill: #5f6368;");
-
-        var root = new BorderPane();
-        root.setTop(new VBox(header, actions));
-        root.setCenter(table);
-        root.setBottom(statusLabel);
-        BorderPane.setMargin(table, new Insets(0, 20, 0, 20));
-
-        refreshTable();
-        stage.setTitle("Campus Directory — лабораторная работа №1");
-        stage.setMinWidth(900);
-        stage.setMinHeight(520);
-        stage.setScene(new Scene(root, 1180, 680));
-        stage.show();
+        operationLabel.setStyle("-fx-text-fill: #5f6368;");
     }
 
     private void configureTable() {
-        addColumn("Тип", 120, contact -> contact.getType().getDisplayName());
+        addColumn("Тип", 110, contact -> contact.getType().getDisplayName());
         addColumn("Имя", 180, Contact::getName);
-        addColumn("Телефон", 150, Contact::getPhone);
-        addColumn("E-mail", 190, Contact::getEmail);
-        addColumn("Организация", 180, Contact::getOrganization);
-        addColumn(
-                "Должность",
-                150,
-                contact -> contact instanceof CorporateContact corporate ? corporate.getPosition() : ""
-        );
-        addColumn(
-                "Внутренний №",
-                110,
+        addColumn("Телефон", 145, Contact::getPhone);
+        addColumn("E-mail", 180, Contact::getEmail);
+        addColumn("Организация", 160, Contact::getOrganization);
+        addColumn("Должность", 130,
+                contact -> contact instanceof CorporateContact corporate ? corporate.getPosition() : "");
+        addColumn("Внутренний №", 100,
                 contact -> contact instanceof CorporateContact corporate
-                        ? Integer.toString(corporate.getExtension())
-                        : ""
-        );
+                        ? Integer.toString(corporate.getExtension()) : "");
         table.setPlaceholder(new Label("Контакты пока не добавлены"));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
     }
@@ -126,7 +196,7 @@ public final class ContactDirectoryApp extends Application {
     private void addContact() {
         ContactDialog.showCreate(stage).ifPresent(contact -> {
             directory.add(contact);
-            refreshTable();
+            refreshAll();
             table.getSelectionModel().select(contact);
         });
     }
@@ -136,13 +206,114 @@ public final class ContactDirectoryApp extends Application {
         if (!(selected instanceof Editable)) {
             return;
         }
-
-        int index = table.getSelectionModel().getSelectedIndex();
         ContactDialog.showEdit(stage, selected).ifPresent(replacement -> {
-            directory.update(index, replacement);
-            refreshTable();
-            table.getSelectionModel().select(index);
+            directory.update(selected, replacement);
+            refreshAll();
+            table.getSelectionModel().select(replacement);
         });
+    }
+
+    private void deleteContact() {
+        Contact selected = table.getSelectionModel().getSelectedItem();
+        if (!(selected instanceof Editable)) {
+            return;
+        }
+        var confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.initOwner(stage);
+        confirmation.setTitle("Удаление контакта");
+        confirmation.setHeaderText("Удалить «" + selected.getName() + "»?");
+        confirmation.setContentText("Контакт будет удалён из Trie.");
+        ButtonType answer = confirmation.showAndWait().orElse(ButtonType.CANCEL);
+        if (answer.getButtonData() == ButtonBar.ButtonData.OK_DONE) {
+            directory.remove(selected);
+            refreshAll();
+        }
+    }
+
+    private void findContact() {
+        String name = prefixField.getText();
+        if (name.isBlank()) {
+            showError("Введите имя", "Для точного поиска требуется полное имя контакта.");
+            return;
+        }
+        Contact found = directory.findFirstByName(name);
+        refreshVisualization();
+        if (found == null) {
+            table.getSelectionModel().clearSelection();
+            statusLabel.setText("Контакт не найден; посещённый путь подсвечен на Trie");
+        } else {
+            table.getItems().setAll(directory.getAll());
+            table.getSelectionModel().select(found);
+            table.scrollTo(found);
+            statusLabel.setText("Найден контакт: " + found.getName());
+        }
+    }
+
+    private void autocomplete() {
+        String prefix = prefixField.getText();
+        List<Contact> matches = directory.autocomplete(prefix);
+        int count = directory.countByPrefix(prefix);
+        table.getItems().setAll(matches);
+        statusLabel.setText("Префикс «%s»: найдено контактов — %d".formatted(prefix.strip(), count));
+        refreshVisualization();
+    }
+
+    private void generateContacts() {
+        var dialog = new TextInputDialog("1000");
+        dialog.initOwner(stage);
+        dialog.setTitle("Генерация набора данных");
+        dialog.setHeaderText("Количество генерируемых контактов");
+        dialog.setContentText("От 1 до " + MAXIMUM_GENERATED_CONTACTS + ":");
+        dialog.showAndWait().ifPresent(value -> parseGenerationCount(value));
+    }
+
+    private void parseGenerationCount(String value) {
+        int count;
+        try {
+            count = Integer.parseInt(value.strip());
+        } catch (NumberFormatException error) {
+            showError("Некорректное количество", "Введите целое число.");
+            return;
+        }
+        if (count < 1 || count > MAXIMUM_GENERATED_CONTACTS) {
+            showError("Некорректное количество", "Допустимо от 1 до " + MAXIMUM_GENERATED_CONTACTS + ".");
+            return;
+        }
+        startGeneration(count);
+    }
+
+    private void startGeneration(int count) {
+        var task = new Task<ContactDirectory>() {
+            @Override
+            protected ContactDirectory call() {
+                updateMessage("Генерация контактов...");
+                Contact[] generated = generator.generate(
+                        count,
+                        this::isCancelled,
+                        completed -> updateProgress(completed, count * 2L)
+                );
+                var generatedDirectory = new ContactDirectory();
+                updateMessage("Построение Trie...");
+                for (int index = 0; index < generated.length; index++) {
+                    if (isCancelled()) {
+                        throw new CancellationException("Генерация отменена");
+                    }
+                    generatedDirectory.add(generated[index]);
+                    if ((index + 1) % 100 == 0 || index + 1 == generated.length) {
+                        updateProgress(count + index + 1L, count * 2L);
+                    }
+                }
+                return generatedDirectory;
+            }
+        };
+        task.setOnSucceeded(event -> {
+            directory = task.getValue();
+            finishOperation();
+            refreshAll();
+            showInformation("Генерация завершена", "Создано контактов: " + count);
+        });
+        configureTaskFailure(task, "Не удалось сгенерировать контакты");
+        startTask(task, true);
     }
 
     private void loadContacts() {
@@ -151,17 +322,35 @@ public final class ContactDirectoryApp extends Application {
         if (file == null) {
             return;
         }
-
-        try {
-            CsvLoadResult result = csvService.load(file.toPath());
-            directory.replaceAll(result.contacts());
-            refreshTable();
-            if (!result.errors().isEmpty()) {
-                showImportWarnings(result);
+        var task = new Task<LoadOutcome>() {
+            @Override
+            protected LoadOutcome call() throws ContactCsvException {
+                updateMessage("Чтение CSV...");
+                CsvLoadResult result = csvService.load(
+                        file.toPath(),
+                        this::isCancelled,
+                        (completed, total) -> updateProgress(completed, Math.max(total, 1))
+                );
+                if (isCancelled()) {
+                    throw new CancellationException("Загрузка отменена");
+                }
+                updateMessage("Построение Trie...");
+                var loadedDirectory = new ContactDirectory();
+                loadedDirectory.replaceAll(result.contacts());
+                return new LoadOutcome(loadedDirectory, result);
             }
-        } catch (ContactCsvException error) {
-            showError("Не удалось загрузить CSV", error.getCode() + ": " + error.getMessage());
-        }
+        };
+        task.setOnSucceeded(event -> {
+            LoadOutcome outcome = task.getValue();
+            directory = outcome.directory();
+            finishOperation();
+            refreshAll();
+            if (!outcome.result().errors().isEmpty()) {
+                showImportWarnings(outcome.result());
+            }
+        });
+        configureTaskFailure(task, "Не удалось загрузить CSV");
+        startTask(task, true);
     }
 
     private void saveContacts() {
@@ -171,13 +360,22 @@ public final class ContactDirectoryApp extends Application {
         if (file == null) {
             return;
         }
-
-        try {
-            csvService.save(file.toPath(), directory.getAll());
-            showInformation("Файл сохранён", "Сохранено контактов: " + directory.size());
-        } catch (ContactCsvException error) {
-            showError("Не удалось сохранить CSV", error.getCode() + ": " + error.getMessage());
-        }
+        List<Contact> snapshot = directory.getAll();
+        var task = new Task<Void>() {
+            @Override
+            protected Void call() throws ContactCsvException {
+                updateMessage("Сохранение CSV...");
+                updateProgress(-1, 1);
+                csvService.save(file.toPath(), snapshot);
+                return null;
+            }
+        };
+        task.setOnSucceeded(event -> {
+            finishOperation();
+            showInformation("Файл сохранён", "Сохранено контактов: " + snapshot.size());
+        });
+        configureTaskFailure(task, "Не удалось сохранить CSV");
+        startTask(task, false);
     }
 
     private FileChooser csvChooser(String title) {
@@ -187,9 +385,59 @@ public final class ContactDirectoryApp extends Application {
         return chooser;
     }
 
-    private void refreshTable() {
+    private void startTask(Task<?> task, boolean cancellable) {
+        if (activeTask != null) {
+            throw new IllegalStateException("Фоновая операция уже выполняется");
+        }
+        activeTask = task;
+        dataActions.setDisable(true);
+        searchActions.setDisable(true);
+        operationProgress.setVisible(true);
+        operationProgress.setManaged(true);
+        cancelOperationButton.setVisible(cancellable);
+        cancelOperationButton.setManaged(cancellable);
+        operationProgress.progressProperty().bind(task.progressProperty());
+        operationLabel.textProperty().bind(task.messageProperty());
+        task.setOnCancelled(event -> finishOperation());
+        var worker = new Thread(task, "campus-directory-background-operation");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void configureTaskFailure(Task<?> task, String header) {
+        task.setOnFailed(event -> {
+            Throwable error = task.getException();
+            finishOperation();
+            if (error instanceof ContactCsvException csvError) {
+                showError(header, csvError.getCode() + ": " + csvError.getMessage());
+            } else {
+                showError(header, error == null ? "Неизвестная ошибка" : error.getMessage());
+            }
+        });
+    }
+
+    private void finishOperation() {
+        operationProgress.progressProperty().unbind();
+        operationLabel.textProperty().unbind();
+        operationProgress.setProgress(0);
+        operationLabel.setText("");
+        operationProgress.setVisible(false);
+        operationProgress.setManaged(false);
+        cancelOperationButton.setVisible(false);
+        cancelOperationButton.setManaged(false);
+        dataActions.setDisable(false);
+        searchActions.setDisable(false);
+        activeTask = null;
+    }
+
+    private void refreshAll() {
         table.getItems().setAll(directory.getAll());
         statusLabel.setText("Контактов: " + directory.size());
+        refreshVisualization();
+    }
+
+    private void refreshVisualization() {
+        trieView.setSnapshot(directory.getTrieSnapshot(VISUALIZATION_NODE_LIMIT));
     }
 
     private void showImportWarnings(CsvLoadResult result) {
@@ -208,8 +456,7 @@ public final class ContactDirectoryApp extends Application {
         alert.initOwner(stage);
         alert.setTitle("CSV загружен с предупреждениями");
         alert.setHeaderText("Загружено: %d, пропущено: %d".formatted(
-                result.contacts().size(),
-                result.errors().size()
+                result.contacts().size(), result.errors().size()
         ));
         alert.setContentText("Повреждённые строки не были добавлены.");
         alert.getDialogPane().setExpandableContent(details);
@@ -236,5 +483,8 @@ public final class ContactDirectoryApp extends Application {
 
     public static void main(String[] args) {
         launch(args);
+    }
+
+    private record LoadOutcome(ContactDirectory directory, CsvLoadResult result) {
     }
 }

@@ -6,6 +6,7 @@ public record TrieNodeSnapshot(
         int contactCount,
         int subtreeContactCount,
         boolean visited,
+        int omittedChildCount,
         TrieNodeSnapshot[] children
 ) {
     public TrieNodeSnapshot {
