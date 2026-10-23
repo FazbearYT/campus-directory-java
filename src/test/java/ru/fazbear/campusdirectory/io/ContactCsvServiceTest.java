@@ -3,6 +3,8 @@ package ru.fazbear.campusdirectory.io;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -100,6 +102,41 @@ class ContactCsvServiceTest {
 
         assertEquals(1, result.contacts().size());
         assertEquals(CsvErrorCode.MALFORMED_QUOTES, result.errors().getFirst().code());
+    }
+
+    @Test
+    void reportsLoadProgress() throws Exception {
+        Path file = write("""
+                type;name;phone;email;organization;position;extension
+                PERSONAL;Анна;112;;;;
+                PERSONAL;Борис;113;;;;
+                """);
+        var completed = new AtomicLong();
+        var total = new AtomicLong();
+
+        CsvLoadResult result = service.load(file, () -> false, (done, maximum) -> {
+            completed.set(done);
+            total.set(maximum);
+        });
+
+        assertEquals(2, result.contacts().size());
+        assertEquals(2, completed.get());
+        assertEquals(2, total.get());
+    }
+
+    @Test
+    void supportsLoadCancellation() throws Exception {
+        Path file = write("""
+                type;name;phone;email;organization;position;extension
+                PERSONAL;Анна;112;;;;
+                PERSONAL;Борис;113;;;;
+                """);
+
+        assertThrows(CancellationException.class, () -> service.load(
+                file,
+                () -> true,
+                (completed, total) -> { }
+        ));
     }
 
     private Path write(String content) throws Exception {

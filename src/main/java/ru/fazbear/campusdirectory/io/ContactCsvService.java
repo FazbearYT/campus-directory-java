@@ -11,6 +11,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.ContactType;
@@ -32,8 +34,18 @@ public final class ContactCsvService {
     );
 
     public CsvLoadResult load(Path path) throws ContactCsvException {
+        return load(path, () -> false, (completed, total) -> { });
+    }
+
+    public CsvLoadResult load(
+            Path path,
+            BooleanSupplier cancelled,
+            CsvProgressListener progress
+    ) throws ContactCsvException {
         var contacts = new ArrayList<Contact>();
         var errors = new ArrayList<CsvRowError>();
+        long totalRows = countDataRows(path);
+        progress.update(0, totalRows);
 
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             String headerLine = reader.readLine();
@@ -41,9 +53,15 @@ public final class ContactCsvService {
 
             String line;
             int lineNumber = 1;
+            long completedRows = 0;
             while ((line = reader.readLine()) != null) {
+                if (cancelled.getAsBoolean()) {
+                    throw new CancellationException("Загрузка CSV отменена");
+                }
                 lineNumber++;
+                completedRows++;
                 if (line.isBlank()) {
+                    progress.update(completedRows, totalRows);
                     continue;
                 }
 
@@ -52,6 +70,7 @@ public final class ContactCsvService {
                 } catch (ContactCsvException error) {
                     errors.add(new CsvRowError(lineNumber, error.getCode(), error.getMessage()));
                 }
+                progress.update(completedRows, totalRows);
             }
         } catch (IOException error) {
             throw new ContactCsvException(
@@ -62,6 +81,25 @@ public final class ContactCsvService {
         }
 
         return new CsvLoadResult(contacts, errors);
+    }
+
+    private long countDataRows(Path path) throws ContactCsvException {
+        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            if (reader.readLine() == null) {
+                return 0;
+            }
+            long count = 0;
+            while (reader.readLine() != null) {
+                count++;
+            }
+            return count;
+        } catch (IOException error) {
+            throw new ContactCsvException(
+                    CsvErrorCode.IO_ERROR,
+                    "Не удалось прочитать файл: " + path,
+                    error
+            );
+        }
     }
 
     public void save(Path path, List<Contact> contacts) throws ContactCsvException {
