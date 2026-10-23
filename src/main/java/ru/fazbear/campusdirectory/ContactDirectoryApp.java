@@ -40,6 +40,8 @@ import ru.fazbear.campusdirectory.model.CorporateContact;
 import ru.fazbear.campusdirectory.model.Editable;
 import ru.fazbear.campusdirectory.service.ContactDirectory;
 import ru.fazbear.campusdirectory.service.ContactGenerator;
+import ru.fazbear.campusdirectory.service.TrieBenchmarkResult;
+import ru.fazbear.campusdirectory.service.TrieBenchmarkService;
 import ru.fazbear.campusdirectory.ui.ContactDialog;
 import ru.fazbear.campusdirectory.ui.TrieCanvasView;
 
@@ -50,6 +52,7 @@ public final class ContactDirectoryApp extends Application {
     private ContactDirectory directory = new ContactDirectory();
     private final ContactCsvService csvService = new ContactCsvService();
     private final ContactGenerator generator = new ContactGenerator();
+    private final TrieBenchmarkService benchmarkService = new TrieBenchmarkService();
     private final TableView<Contact> table = new TableView<>();
     private final TrieCanvasView trieView = new TrieCanvasView();
     private final TextField prefixField = new TextField();
@@ -113,6 +116,7 @@ public final class ContactDirectoryApp extends Application {
         Button editButton = new Button("Изменить");
         Button deleteButton = new Button("Удалить");
         Button generateButton = new Button("Сгенерировать");
+        Button benchmarkButton = new Button("Замеры");
         Button loadButton = new Button("Загрузить CSV");
         Button saveButton = new Button("Сохранить CSV");
 
@@ -130,13 +134,15 @@ public final class ContactDirectoryApp extends Application {
         editButton.setOnAction(event -> editContact());
         deleteButton.setOnAction(event -> deleteContact());
         generateButton.setOnAction(event -> generateContacts());
+        benchmarkButton.setOnAction(event -> runBenchmarks());
         loadButton.setOnAction(event -> loadContacts());
         saveButton.setOnAction(event -> saveContacts());
 
         var spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         dataActions.getChildren().addAll(
-                addButton, editButton, deleteButton, spacer, generateButton, loadButton, saveButton
+                addButton, editButton, deleteButton, spacer,
+                generateButton, benchmarkButton, loadButton, saveButton
         );
         dataActions.setAlignment(Pos.CENTER_LEFT);
         dataActions.setPadding(new Insets(10, 20, 12, 20));
@@ -316,6 +322,30 @@ public final class ContactDirectoryApp extends Application {
         startTask(task, true);
     }
 
+    private void runBenchmarks() {
+        var task = new Task<TrieBenchmarkResult[]>() {
+            @Override
+            protected TrieBenchmarkResult[] call() {
+                var results = new TrieBenchmarkResult[2];
+                updateMessage("Замер на 10 000 контактов...");
+                updateProgress(0, results.length);
+                results[0] = benchmarkService.run(10_000, this::isCancelled);
+                updateProgress(1, results.length);
+                updateMessage("Замер на 100 000 контактов...");
+                results[1] = benchmarkService.run(100_000, this::isCancelled);
+                updateProgress(2, results.length);
+                return results;
+            }
+        };
+        task.setOnSucceeded(event -> {
+            TrieBenchmarkResult[] results = task.getValue();
+            finishOperation();
+            showBenchmarkResults(results);
+        });
+        configureTaskFailure(task, "Не удалось выполнить замеры");
+        startTask(task, true);
+    }
+
     private void loadContacts() {
         FileChooser chooser = csvChooser("Загрузить контакты из CSV");
         File file = chooser.showOpenDialog(stage);
@@ -461,6 +491,37 @@ public final class ContactDirectoryApp extends Application {
         alert.setContentText("Повреждённые строки не были добавлены.");
         alert.getDialogPane().setExpandableContent(details);
         alert.getDialogPane().setExpanded(true);
+        alert.showAndWait();
+    }
+
+    private void showBenchmarkResults(TrieBenchmarkResult[] results) {
+        var text = new StringBuilder();
+        text.append(String.format(
+                "%-10s %12s %12s %12s %14s %14s%n",
+                "Контакты", "Вставка", "Поиск", "Удаление", "Автодоп.", "Поддерево"
+        ));
+        for (TrieBenchmarkResult result : results) {
+            text.append(String.format(
+                    "%,10d %12.3f %12.3f %12.3f %14.3f %14.3f%n",
+                    result.contactCount(),
+                    result.insertionMillis(),
+                    result.searchMillis(),
+                    result.removalMillis(),
+                    result.autocompleteMillis(),
+                    result.subtreeCountMillis()
+            ));
+        }
+
+        var area = new TextArea(text.toString());
+        area.setEditable(false);
+        area.setStyle("-fx-font-family: monospace;");
+        area.setPrefColumnCount(82);
+        area.setPrefRowCount(5);
+        var alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.initOwner(stage);
+        alert.setTitle("Замеры Trie");
+        alert.setHeaderText("Время операций, миллисекунды");
+        alert.getDialogPane().setContent(area);
         alert.showAndWait();
     }
 
