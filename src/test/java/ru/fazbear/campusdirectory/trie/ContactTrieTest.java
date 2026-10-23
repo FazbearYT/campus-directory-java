@@ -142,6 +142,21 @@ class ContactTrieTest {
         assertSame(first, trie.findFirst("Anna"));
     }
 
+    @Test
+    void limitsSnapshotDepthWithoutLosingUnderlyingContact() {
+        var trie = new ContactTrie();
+        Contact contact = contact("a".repeat(256));
+        trie.add(contact);
+        TrieNodeSnapshot snapshot = trie.snapshot(500, 128);
+        assertEquals(129, countNodes(snapshot));
+        while (snapshot.children().length > 0) {
+            snapshot = snapshot.children()[0];
+        }
+        assertEquals(1, snapshot.omittedChildCount());
+        assertSame(contact, trie.findFirst(contact.getName()));
+        assertEquals(1, countNodes(trie.snapshot(500, 0)));
+    }
+
     private PersonalContact contact(String name) {
         return new PersonalContact(name, "112", "", "");
     }

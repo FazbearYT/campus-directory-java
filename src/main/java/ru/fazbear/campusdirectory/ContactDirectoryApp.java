@@ -4,6 +4,7 @@ import java.io.File;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import javafx.application.Application;
 import javafx.beans.binding.Bindings;
@@ -35,7 +36,9 @@ import javafx.stage.Stage;
 import ru.fazbear.campusdirectory.io.ContactCsvException;
 import ru.fazbear.campusdirectory.io.ContactCsvService;
 import ru.fazbear.campusdirectory.io.CsvLoadResult;
+import ru.fazbear.campusdirectory.io.CsvErrorCode;
 import ru.fazbear.campusdirectory.model.Contact;
+import ru.fazbear.campusdirectory.model.ContactValidator;
 import ru.fazbear.campusdirectory.model.CorporateContact;
 import ru.fazbear.campusdirectory.model.Editable;
 import ru.fazbear.campusdirectory.service.ContactDirectory;
@@ -47,6 +50,7 @@ import ru.fazbear.campusdirectory.ui.TrieCanvasView;
 
 public final class ContactDirectoryApp extends Application {
     private static final int VISUALIZATION_NODE_LIMIT = 500;
+    private static final int VISUALIZATION_DEPTH_LIMIT = 128;
     private static final int MAXIMUM_GENERATED_CONTACTS = 100_000;
 
     private ContactDirectory directory = new ContactDirectory();
@@ -242,6 +246,11 @@ public final class ContactDirectoryApp extends Application {
             showError("Введите имя", "Для точного поиска требуется полное имя контакта.");
             return;
         }
+        if (name.strip().length() > ContactValidator.MAXIMUM_NAME_LENGTH) {
+            showError("Слишком длинное имя", "Допустимо до "
+                    + ContactValidator.MAXIMUM_NAME_LENGTH + " символов.");
+            return;
+        }
         Contact found = directory.findFirstByName(name);
         refreshVisualization();
         if (found == null) {
@@ -285,7 +294,22 @@ public final class ContactDirectoryApp extends Application {
             showError("Некорректное количество", "Допустимо от 1 до " + MAXIMUM_GENERATED_CONTACTS + ".");
             return;
         }
-        startGeneration(count);
+        if (confirmReplacement("Сгенерировать новый набор?")) {
+            startGeneration(count);
+        }
+    }
+
+    private boolean confirmReplacement(String header) {
+        if (directory.size() == 0) {
+            return true;
+        }
+        var confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.initOwner(stage);
+        confirmation.setTitle("Замена набора контактов");
+        confirmation.setHeaderText(header);
+        confirmation.setContentText("Текущие контакты (" + directory.size()
+                + ") будут заменены. Сохраните их в CSV, если хотите использовать их позже.");
+        return confirmation.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
     private void startGeneration(int count) {
@@ -352,10 +376,14 @@ public final class ContactDirectoryApp extends Application {
         if (file == null) {
             return;
         }
+        if (!confirmReplacement("Загрузить новый набор из CSV?")) {
+            return;
+        }
         var task = new Task<LoadOutcome>() {
             @Override
             protected LoadOutcome call() throws ContactCsvException {
                 updateMessage("Чтение CSV...");
+                updateProgress(-1, 1);
                 CsvLoadResult result = csvService.load(
                         file.toPath(),
                         this::isCancelled,
@@ -364,10 +392,16 @@ public final class ContactDirectoryApp extends Application {
                 if (isCancelled()) {
                     throw new CancellationException("Загрузка отменена");
                 }
+                if (result.contacts().isEmpty() && !result.errors().isEmpty()) {
+                    throw new ContactCsvException(CsvErrorCode.INVALID_CONTACT,
+                            "В файле нет корректных контактов. Текущий набор сохранён. Ошибок: "
+                                    + result.errors().size());
+                }
                 updateMessage("Построение Trie...");
                 updateProgress(-1, 1);
                 var loadedDirectory = new ContactDirectory();
-                loadedDirectory.replaceAll(result.contacts(), this::isCancelled, completed -> { });
+                loadedDirectory.replaceAll(result.contacts(), this::isCancelled,
+                        completed -> updateProgress(completed, Math.max(result.contacts().size(), 1)));
                 return new LoadOutcome(loadedDirectory, result);
             }
         };
@@ -468,15 +502,14 @@ public final class ContactDirectoryApp extends Application {
     }
 
     private void refreshVisualization() {
-        trieView.setSnapshot(directory.getTrieSnapshot(VISUALIZATION_NODE_LIMIT));
+        trieView.setSnapshot(directory.getTrieSnapshot(VISUALIZATION_NODE_LIMIT, VISUALIZATION_DEPTH_LIMIT));
     }
 
     private void showImportWarnings(CsvLoadResult result) {
         var details = new TextArea(
                 result.errors().stream()
                         .map(Object::toString)
-                        .reduce((left, right) -> left + System.lineSeparator() + right)
-                        .orElse("")
+                        .collect(Collectors.joining(System.lineSeparator()))
         );
         details.setEditable(false);
         details.setWrapText(true);
@@ -505,23 +538,29 @@ public final class ContactDirectoryApp extends Application {
             text.append(String.format(
                     "%,10d %12.3f %12.3f %12.3f %14.3f %14.3f%n",
                     result.contactCount(),
-                    result.insertionMillis(),
-                    result.searchMillis(),
-                    result.removalMillis(),
-                    result.autocompleteMillis(),
-                    result.subtreeCountMillis()
+                    result.insertionMicrosPerOperation(),
+                    result.searchMicrosPerOperation(),
+                    result.removalMicrosPerOperation(),
+                    result.autocompleteMicrosPerOperation(),
+                    result.subtreeCountMicrosPerOperation()
             ));
         }
+        text.append("\nМедиана ").append(results[0].measurementRuns())
+                .append(" прогонов после 2 прогревочных.\n")
+                .append("Вставка/поиск/удаление: N вызовов; автодополнение/подсчёт: ")
+                .append(results[0].additionalOperationCount()).append(" вызовов.\n")
+                .append("Для автодополнения используются разные двухсимвольные префиксы.\n")
+                .append("Время автодополнения включает сбор найденных контактов.");
 
         var area = new TextArea(text.toString());
         area.setEditable(false);
         area.setStyle("-fx-font-family: monospace;");
         area.setPrefColumnCount(82);
-        area.setPrefRowCount(5);
+        area.setPrefRowCount(10);
         var alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(stage);
         alert.setTitle("Замеры Trie");
-        alert.setHeaderText("Время операций, миллисекунды");
+        alert.setHeaderText("Среднее время одного вызова, микросекунды (медиана прогонов)");
         alert.getDialogPane().setContent(area);
         alert.showAndWait();
     }

@@ -3,12 +3,14 @@ package ru.fazbear.campusdirectory.ui;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
+import javafx.application.Platform;
 import javafx.geometry.Point2D;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
@@ -22,17 +24,26 @@ public final class TrieCanvasView extends VBox {
     private static final double VERTICAL_STEP = 78;
     private static final double NODE_RADIUS = 18;
     private static final double MARGIN = 48;
-    private static final double MAXIMUM_CANVAS_WIDTH = 12_000;
+    private static final double MAXIMUM_VIEWPORT_SIZE = 2_048;
 
     private final Label summary = new Label("Trie пока пуст");
     private final Canvas canvas = new Canvas(900, 560);
+    private final Pane drawingArea = new Pane(canvas);
+    private final ScrollPane scrollPane = new ScrollPane(drawingArea);
+    private TrieNodeSnapshot displayedRoot;
+    private Map<TrieNodeSnapshot, Point2D> displayedPositions;
+    private double drawingWidth = 900;
+    private double drawingHeight = 560;
 
     public TrieCanvasView() {
-        var scrollPane = new ScrollPane(canvas);
+        canvas.setManaged(false);
         setSpacing(8);
         summary.setStyle("-fx-text-fill: #5f6368;");
         summary.setWrapText(true);
         scrollPane.setPannable(true);
+        scrollPane.hvalueProperty().addListener((observable, previous, current) -> drawViewport());
+        scrollPane.vvalueProperty().addListener((observable, previous, current) -> drawViewport());
+        scrollPane.viewportBoundsProperty().addListener((observable, previous, current) -> drawViewport());
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
         getChildren().addAll(summary, scrollPane);
     }
@@ -41,20 +52,38 @@ public final class TrieCanvasView extends VBox {
         var leafCounts = new IdentityHashMap<TrieNodeSnapshot, Integer>();
         int leaves = countLeaves(root, leafCounts);
         int depth = maximumDepth(root, 0);
-        double width = Math.min(MAXIMUM_CANVAS_WIDTH, Math.max(900, leaves * HORIZONTAL_STEP + MARGIN * 2));
+        double width = Math.max(900, leaves * HORIZONTAL_STEP + MARGIN * 2);
         double height = Math.max(560, (depth + 1) * VERTICAL_STEP + MARGIN * 2);
-        canvas.setWidth(width);
-        canvas.setHeight(height);
+        drawingWidth = width;
+        drawingHeight = height;
+        drawingArea.setMinSize(width, height);
+        drawingArea.setPrefSize(width, height);
+        drawingArea.setMaxSize(width, height);
 
         var positions = new IdentityHashMap<TrieNodeSnapshot, Point2D>();
         placeNodes(root, 0, MARGIN, width - MARGIN * 2, leafCounts, positions);
-        draw(root, positions);
+        displayedRoot = root;
+        displayedPositions = positions;
+        drawViewport();
+        Platform.runLater(this::focusRoot);
 
         int omittedBranches = countOmittedBranches(root);
         String suffix = omittedBranches == 0 ? "" : "; скрыто ветвей: " + omittedBranches;
         summary.setText("Узлов показано: %d; контактов: %d%s".formatted(
                 countNodes(root), root.subtreeContactCount(), suffix
         ));
+    }
+
+    private void focusRoot() {
+        if (displayedRoot != null) {
+            double viewportWidth = scrollPane.getViewportBounds().getWidth();
+            double availableScroll = drawingWidth - viewportWidth;
+            double rootX = displayedPositions.get(displayedRoot).getX();
+            scrollPane.setHvalue(availableScroll <= 0 ? 0
+                    : Math.max(0, Math.min(1, (rootX - viewportWidth / 2) / availableScroll)));
+            scrollPane.setVvalue(0);
+            drawViewport();
+        }
     }
 
     private int countLeaves(TrieNodeSnapshot node, Map<TrieNodeSnapshot, Integer> leafCounts) {
@@ -99,12 +128,25 @@ public final class TrieCanvasView extends VBox {
         positions.put(node, new Point2D((first.getX() + last.getX()) / 2, MARGIN + depth * VERTICAL_STEP));
     }
 
-    private void draw(TrieNodeSnapshot root, Map<TrieNodeSnapshot, Point2D> positions) {
+    private void drawViewport() {
+        if (displayedRoot == null) {
+            return;
+        }
+        double viewportWidth = Math.max(1, scrollPane.getViewportBounds().getWidth());
+        double viewportHeight = Math.max(1, scrollPane.getViewportBounds().getHeight());
+        double offsetX = Math.max(0, drawingWidth - viewportWidth) * scrollPane.getHvalue();
+        double offsetY = Math.max(0, drawingHeight - viewportHeight) * scrollPane.getVvalue();
+        canvas.setWidth(Math.min(MAXIMUM_VIEWPORT_SIZE, viewportWidth));
+        canvas.setHeight(Math.min(MAXIMUM_VIEWPORT_SIZE, viewportHeight));
+        canvas.relocate(offsetX, offsetY);
         GraphicsContext graphics = canvas.getGraphicsContext2D();
         graphics.setFill(Color.WHITE);
         graphics.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
-        drawEdges(root, positions, graphics);
-        drawNodes(root, positions, graphics);
+        graphics.save();
+        graphics.translate(-offsetX, -offsetY);
+        drawEdges(displayedRoot, displayedPositions, graphics);
+        drawNodes(displayedRoot, displayedPositions, graphics);
+        graphics.restore();
     }
 
     private void drawEdges(TrieNodeSnapshot node, Map<TrieNodeSnapshot, Point2D> positions,

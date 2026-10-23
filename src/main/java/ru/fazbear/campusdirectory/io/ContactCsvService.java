@@ -42,6 +42,9 @@ public final class ContactCsvService {
             BooleanSupplier cancelled,
             CsvProgressListener progress
     ) throws ContactCsvException {
+        if (cancelled.getAsBoolean()) {
+            throw new CancellationException("Загрузка CSV отменена");
+        }
         var contacts = new ArrayList<Contact>();
         var errors = new ArrayList<CsvRowError>();
         long totalRows = countDataRows(path, cancelled);
@@ -80,6 +83,9 @@ public final class ContactCsvService {
             );
         }
 
+        if (cancelled.getAsBoolean()) {
+            throw new CancellationException("Загрузка CSV отменена");
+        }
         return new CsvLoadResult(contacts, errors);
     }
 

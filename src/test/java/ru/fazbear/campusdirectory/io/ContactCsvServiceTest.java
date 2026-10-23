@@ -25,6 +25,36 @@ class ContactCsvServiceTest {
     Path temporaryDirectory;
 
     @Test
+    void roundTripsRandomFieldsWithDelimitersQuotesAndUnicode() throws Exception {
+        var random = new java.util.Random(20261023L);
+        var contacts = new java.util.ArrayList<Contact>();
+        String alphabet = "abcXYZ ;\"Ёя\u0130";
+        for (int index = 0; index < 1200; index++) {
+            var text = new StringBuilder("Contact " + index + " ");
+            for (int symbol = 0; symbol < 30; symbol++) {
+                text.append(alphabet.charAt(random.nextInt(alphabet.length())));
+            }
+            contacts.add(new PersonalContact(text.toString(), "+7 (123) 456-78-90",
+                    "c" + index + "@example.com", text.reverse().toString()));
+        }
+        Path file = temporaryDirectory.resolve("random.csv");
+        service.save(file, contacts);
+        CsvLoadResult result = service.load(file);
+        assertEquals(contacts, result.contacts());
+        assertTrue(result.errors().isEmpty());
+    }
+
+    @Test
+    void cancelsHeaderOnlyFileAndFinalProgressCallback() throws Exception {
+        Path empty = write("type;name;phone;email;organization;position;extension\n");
+        assertThrows(CancellationException.class, () -> service.load(empty, () -> true, (a, b) -> { }));
+        Path file = write("type;name;phone;email;organization;position;extension\nPERSONAL;Anna;123;;;;\n");
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        assertThrows(CancellationException.class, () -> service.load(file, cancelled::get,
+                (done, total) -> { if (done == total) cancelled.set(true); }));
+    }
+
+    @Test
     void rejectsTextAfterClosingQuoteAndPreservesValidRows() throws Exception {
         Path file = write("""
                 type;name;phone;email;organization;position;extension

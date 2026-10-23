@@ -14,6 +14,28 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ContactDirectoryTest {
     @Test
+    void keepsPreviousDataWhenCancelledByFinalProgressCallback() {
+        var directory = new ContactDirectory();
+        var original = new PersonalContact("Anna", "123", "", "");
+        directory.add(original);
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        assertThrows(CancellationException.class, () -> directory.replaceAll(
+                List.of(new PersonalContact("Boris", "123", "", "")),
+                cancelled::get, completed -> cancelled.set(true)));
+        assertEquals(List.of(original), directory.getAll());
+    }
+
+    @Test
+    void invalidUpdateKeepsOriginalContact() {
+        var directory = new ContactDirectory();
+        var original = new PersonalContact("Anna", "123", "", "");
+        directory.add(original);
+        assertThrows(ContactValidationException.class, () -> directory.update(original,
+                new PersonalContact("a".repeat(6000), "123", "", "")));
+        assertEquals(List.of(original), directory.getAll());
+    }
+
+    @Test
     void addsEditableContact() {
         var directory = new ContactDirectory();
         var contact = new PersonalContact("Анна", "+7 900 100-20-30", "", "");

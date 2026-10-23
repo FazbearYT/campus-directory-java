@@ -97,10 +97,17 @@ public final class ContactTrie {
     }
 
     public synchronized TrieNodeSnapshot snapshot(int maximumNodes) {
+        return snapshot(maximumNodes, Integer.MAX_VALUE);
+    }
+
+    public synchronized TrieNodeSnapshot snapshot(int maximumNodes, int maximumDepth) {
         if (maximumNodes < 1) {
             throw new IllegalArgumentException("Количество отображаемых узлов должно быть положительным");
         }
-        return breadthFirstSnapshot(maximumNodes);
+        if (maximumDepth < 0) {
+            throw new IllegalArgumentException("Глубина снимка не может быть отрицательной");
+        }
+        return breadthFirstSnapshot(maximumNodes, maximumDepth);
     }
 
     public synchronized int size() {
@@ -149,13 +156,14 @@ public final class ContactTrie {
         }
     }
 
-    private TrieNodeSnapshot breadthFirstSnapshot(int maximumNodes) {
+    private TrieNodeSnapshot breadthFirstSnapshot(int maximumNodes, int maximumDepth) {
         var queue = new SnapshotEntry[Math.min(maximumNodes, 64)];
         queue[0] = new SnapshotEntry(root, "");
         int tail = 1;
         for (int head = 0; head < tail; head++) {
             SnapshotEntry entry = queue[head];
-            int visibleChildren = Math.min(entry.node.childCount, maximumNodes - tail);
+            int visibleChildren = entry.path.length() >= maximumDepth ? 0
+                    : Math.min(entry.node.childCount, maximumNodes - tail);
             entry.firstChild = tail;
             entry.visibleChildren = visibleChildren;
             if (tail + visibleChildren > queue.length) {

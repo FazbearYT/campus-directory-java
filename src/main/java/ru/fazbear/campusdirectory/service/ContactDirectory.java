@@ -63,6 +63,10 @@ public final class ContactDirectory {
         return contacts.snapshot(maximumNodes);
     }
 
+    public TrieNodeSnapshot getTrieSnapshot(int maximumNodes, int maximumDepth) {
+        return contacts.snapshot(maximumNodes, maximumDepth);
+    }
+
     public void replaceAll(List<Contact> loadedContacts) {
         replaceAll(loadedContacts, () -> false, completed -> { });
     }
@@ -83,6 +87,9 @@ public final class ContactDirectory {
             if ((index + 1) % 100 == 0 || index + 1 == loadedContacts.size()) {
                 progress.accept(index + 1);
             }
+        }
+        if (cancelled.getAsBoolean()) {
+            throw new CancellationException("Построение Trie отменено");
         }
         contacts = replacement;
     }
