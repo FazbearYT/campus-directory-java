@@ -44,7 +44,7 @@ public final class ContactCsvService {
     ) throws ContactCsvException {
         var contacts = new ArrayList<Contact>();
         var errors = new ArrayList<CsvRowError>();
-        long totalRows = countDataRows(path);
+        long totalRows = countDataRows(path, cancelled);
         progress.update(0, totalRows);
 
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -83,13 +83,16 @@ public final class ContactCsvService {
         return new CsvLoadResult(contacts, errors);
     }
 
-    private long countDataRows(Path path) throws ContactCsvException {
+    private long countDataRows(Path path, BooleanSupplier cancelled) throws ContactCsvException {
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             if (reader.readLine() == null) {
                 return 0;
             }
             long count = 0;
             while (reader.readLine() != null) {
+                if (cancelled.getAsBoolean()) {
+                    throw new CancellationException("Загрузка CSV отменена");
+                }
                 count++;
             }
             return count;

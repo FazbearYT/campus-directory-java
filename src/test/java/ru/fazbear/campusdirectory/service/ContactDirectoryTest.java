@@ -1,6 +1,7 @@
 package ru.fazbear.campusdirectory.service;
 
 import java.util.List;
+import java.util.concurrent.CancellationException;
 
 import org.junit.jupiter.api.Test;
 
@@ -75,5 +76,20 @@ class ContactDirectoryTest {
 
         assertNull(directory.findFirstByName("анна"));
         assertEquals(1, directory.size());
+    }
+
+    @Test
+    void keepsPreviousDataWhenReplacementIsCancelled() {
+        var directory = new ContactDirectory();
+        var original = new PersonalContact("Анна", "112", "", "");
+        directory.add(original);
+
+        assertThrows(CancellationException.class, () -> directory.replaceAll(
+                List.of(new PersonalContact("Борис", "113", "", "")),
+                () -> true,
+                completed -> { }
+        ));
+
+        assertEquals(List.of(original), directory.getAll());
     }
 }

@@ -365,8 +365,9 @@ public final class ContactDirectoryApp extends Application {
                     throw new CancellationException("Загрузка отменена");
                 }
                 updateMessage("Построение Trie...");
+                updateProgress(-1, 1);
                 var loadedDirectory = new ContactDirectory();
-                loadedDirectory.replaceAll(result.contacts());
+                loadedDirectory.replaceAll(result.contacts(), this::isCancelled, completed -> { });
                 return new LoadOutcome(loadedDirectory, result);
             }
         };

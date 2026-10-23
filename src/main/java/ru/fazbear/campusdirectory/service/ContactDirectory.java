@@ -1,6 +1,9 @@
 package ru.fazbear.campusdirectory.service;
 
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
+import java.util.function.IntConsumer;
 
 import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.ContactValidator;
@@ -61,10 +64,25 @@ public final class ContactDirectory {
     }
 
     public void replaceAll(List<Contact> loadedContacts) {
+        replaceAll(loadedContacts, () -> false, completed -> { });
+    }
+
+    public void replaceAll(
+            List<Contact> loadedContacts,
+            BooleanSupplier cancelled,
+            IntConsumer progress
+    ) {
         var replacement = new ContactTrie();
-        for (Contact contact : loadedContacts) {
+        for (int index = 0; index < loadedContacts.size(); index++) {
+            if (cancelled.getAsBoolean()) {
+                throw new CancellationException("Построение Trie отменено");
+            }
+            Contact contact = loadedContacts.get(index);
             requireValid(contact);
             replacement.add(contact);
+            if ((index + 1) % 100 == 0 || index + 1 == loadedContacts.size()) {
+                progress.accept(index + 1);
+            }
         }
         contacts = replacement;
     }
