@@ -5,7 +5,8 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 public final class ContactValidator {
-    private static final Pattern PHONE_PATTERN = Pattern.compile("[+0-9()\\-\\s]{3,25}");
+    public static final int MAXIMUM_NAME_LENGTH = 256;
+    private static final Pattern PHONE_PATTERN = Pattern.compile("[+0-9()\\- ]{3,25}");
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
             "[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+"
     );
@@ -20,6 +21,8 @@ public final class ContactValidator {
             errors.add("Имя обязательно");
         } else if (containsLineBreak(contact.getName())) {
             errors.add("Имя должно занимать одну строку");
+        } else if (contact.getName().length() > MAXIMUM_NAME_LENGTH) {
+            errors.add("Имя не должно превышать " + MAXIMUM_NAME_LENGTH + " символов");
         }
 
         if (contact.getPhone().isBlank()) {

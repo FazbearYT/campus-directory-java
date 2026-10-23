@@ -4,31 +4,28 @@ import java.util.Locale;
 import java.util.Objects;
 
 import ru.fazbear.campusdirectory.model.Contact;
+import ru.fazbear.campusdirectory.model.ContactValidator;
 
 public final class ContactTrie {
     private final Node root = new Node('\0');
-    private String[] lastVisitedPaths = new String[0];
+    private long visitId;
     private int size;
 
     public synchronized void add(Contact contact) {
         Objects.requireNonNull(contact, "contact must not be null");
         String key = normalizeKey(contact.getName());
-        var visited = new PathBuffer();
-        var path = new StringBuilder();
         Node current = root;
-        visited.add("");
+        beginVisit();
 
         for (int index = 0; index < key.length(); index++) {
             char symbol = key.charAt(index);
             current = current.getOrCreateChild(symbol);
-            path.append(symbol);
-            visited.add(path.toString());
+            current.lastVisitId = visitId;
         }
 
         current.addContact(contact);
         adjustSubtreeCounts(key, 1);
         size++;
-        lastVisitedPaths = visited.toArray();
     }
 
     public synchronized Contact findFirst(String name) {
@@ -39,26 +36,21 @@ public final class ContactTrie {
     public synchronized boolean remove(Contact contact) {
         Objects.requireNonNull(contact, "contact must not be null");
         String key = normalizeKey(contact.getName());
-        var visited = new PathBuffer();
         Node current = root;
-        visited.add("");
+        beginVisit();
 
         Node[] nodes = new Node[key.length() + 1];
         nodes[0] = root;
-        var path = new StringBuilder();
         for (int index = 0; index < key.length(); index++) {
             current = current.findChild(key.charAt(index));
             if (current == null) {
-                lastVisitedPaths = visited.toArray();
                 return false;
             }
             nodes[index + 1] = current;
-            path.append(key.charAt(index));
-            visited.add(path.toString());
+            current.lastVisitId = visitId;
         }
 
         if (!current.removeContact(contact)) {
-            lastVisitedPaths = visited.toArray();
             return false;
         }
 
@@ -74,7 +66,6 @@ public final class ContactTrie {
         }
 
         size--;
-        lastVisitedPaths = visited.toArray();
         return true;
     }
 
@@ -109,7 +100,7 @@ public final class ContactTrie {
         if (maximumNodes < 1) {
             throw new IllegalArgumentException("Количество отображаемых узлов должно быть положительным");
         }
-        return snapshot(root, "", new SnapshotBudget(maximumNodes));
+        return breadthFirstSnapshot(maximumNodes);
     }
 
     public synchronized int size() {
@@ -117,27 +108,27 @@ public final class ContactTrie {
     }
 
     private Node findNode(String key, boolean recordVisit) {
-        var visited = new PathBuffer();
-        var path = new StringBuilder();
         Node current = root;
-        visited.add("");
+        if (recordVisit) {
+            beginVisit();
+        }
 
         for (int index = 0; index < key.length(); index++) {
             current = current.findChild(key.charAt(index));
             if (current == null) {
-                if (recordVisit) {
-                    lastVisitedPaths = visited.toArray();
-                }
                 return null;
             }
-            path.append(key.charAt(index));
-            visited.add(path.toString());
+            if (recordVisit) {
+                current.lastVisitId = visitId;
+            }
         }
 
-        if (recordVisit) {
-            lastVisitedPaths = visited.toArray();
-        }
         return current;
+    }
+
+    private void beginVisit() {
+        visitId++;
+        root.lastVisitId = visitId;
     }
 
     private void adjustSubtreeCounts(String key, int change) {
@@ -158,41 +149,46 @@ public final class ContactTrie {
         }
     }
 
-    private TrieNodeSnapshot snapshot(Node node, String path, SnapshotBudget budget) {
-        budget.useNode();
-        int visibleChildCount = Math.min(node.childCount, budget.remaining());
-        var children = new TrieNodeSnapshot[visibleChildCount];
-        int createdChildren = 0;
-        for (int index = 0; index < node.childCount && budget.hasSpace(); index++) {
-            Node child = node.children[index];
-            children[createdChildren++] = snapshot(child, path + child.symbol, budget);
-        }
-        if (createdChildren != children.length) {
-            var compactChildren = new TrieNodeSnapshot[createdChildren];
-            System.arraycopy(children, 0, compactChildren, 0, createdChildren);
-            children = compactChildren;
-        }
-        return new TrieNodeSnapshot(
-                node.symbol,
-                path,
-                node.contactCount,
-                node.subtreeContactCount,
-                wasVisited(path),
-                node.childCount - createdChildren,
-                children
-        );
-    }
-
-    private boolean wasVisited(String path) {
-        for (String visitedPath : lastVisitedPaths) {
-            if (visitedPath.equals(path)) {
-                return true;
+    private TrieNodeSnapshot breadthFirstSnapshot(int maximumNodes) {
+        var queue = new SnapshotEntry[Math.min(maximumNodes, 64)];
+        queue[0] = new SnapshotEntry(root, "");
+        int tail = 1;
+        for (int head = 0; head < tail; head++) {
+            SnapshotEntry entry = queue[head];
+            int visibleChildren = Math.min(entry.node.childCount, maximumNodes - tail);
+            entry.firstChild = tail;
+            entry.visibleChildren = visibleChildren;
+            if (tail + visibleChildren > queue.length) {
+                var expanded = new SnapshotEntry[Math.max(tail + visibleChildren,
+                        (int) Math.min(maximumNodes, queue.length * 2L))];
+                System.arraycopy(queue, 0, expanded, 0, tail);
+                queue = expanded;
+            }
+            for (int index = 0; index < visibleChildren; index++) {
+                Node child = entry.node.children[index];
+                queue[tail++] = new SnapshotEntry(child, entry.path + child.symbol);
             }
         }
-        return false;
+        for (int index = tail - 1; index >= 0; index--) {
+            SnapshotEntry entry = queue[index];
+            var children = new TrieNodeSnapshot[entry.visibleChildren];
+            for (int child = 0; child < children.length; child++) {
+                children[child] = queue[entry.firstChild + child].snapshot;
+            }
+            Node node = entry.node;
+            entry.snapshot = new TrieNodeSnapshot(node.symbol, entry.path, node.contactCount,
+                    node.subtreeContactCount, visitId != 0 && node.lastVisitId == visitId,
+                    node.childCount - children.length, children);
+        }
+        return queue[0].snapshot;
     }
 
     private static String normalizeKey(String value) {
+        if (Objects.requireNonNull(value, "name must not be null").strip().length()
+                > ContactValidator.MAXIMUM_NAME_LENGTH) {
+            throw new IllegalArgumentException("Имя не должно превышать "
+                    + ContactValidator.MAXIMUM_NAME_LENGTH + " символов");
+        }
         String key = normalizePrefix(value);
         if (key.isEmpty()) {
             throw new IllegalArgumentException("Имя контакта не может быть пустым");
@@ -213,6 +209,7 @@ public final class ContactTrie {
         private int childCount;
         private int contactCount;
         private int subtreeContactCount;
+        private long lastVisitId;
 
         private Node(char symbol) {
             this.symbol = symbol;
@@ -274,16 +271,26 @@ public final class ContactTrie {
 
         private boolean removeContact(Contact contact) {
             for (int index = 0; index < contactCount; index++) {
-                if (contacts[index] == contact || contacts[index].equals(contact)) {
-                    int moved = contactCount - index - 1;
-                    if (moved > 0) {
-                        System.arraycopy(contacts, index + 1, contacts, index, moved);
-                    }
-                    contacts[--contactCount] = null;
+                if (contacts[index] == contact) {
+                    removeContactAt(index);
+                    return true;
+                }
+            }
+            for (int index = 0; index < contactCount; index++) {
+                if (contacts[index].equals(contact)) {
+                    removeContactAt(index);
                     return true;
                 }
             }
             return false;
+        }
+
+        private void removeContactAt(int index) {
+            int moved = contactCount - index - 1;
+            if (moved > 0) {
+                System.arraycopy(contacts, index + 1, contacts, index, moved);
+            }
+            contacts[--contactCount] = null;
         }
 
         private void ensureChildCapacity(int required) {
@@ -329,46 +336,16 @@ public final class ContactTrie {
         }
     }
 
-    private static final class PathBuffer {
-        private String[] values = new String[8];
-        private int size;
+    private static final class SnapshotEntry {
+        private final Node node;
+        private final String path;
+        private int firstChild;
+        private int visibleChildren;
+        private TrieNodeSnapshot snapshot;
 
-        private void add(String path) {
-            if (size == values.length) {
-                var expanded = new String[values.length * 2];
-                System.arraycopy(values, 0, expanded, 0, size);
-                values = expanded;
-            }
-            values[size++] = path;
-        }
-
-        private String[] toArray() {
-            var result = new String[size];
-            System.arraycopy(values, 0, result, 0, size);
-            return result;
-        }
-    }
-
-    private static final class SnapshotBudget {
-        private int remaining;
-
-        private SnapshotBudget(int maximumNodes) {
-            remaining = maximumNodes;
-        }
-
-        private void useNode() {
-            if (remaining == 0) {
-                throw new IllegalStateException("Trie snapshot budget exhausted");
-            }
-            remaining--;
-        }
-
-        private boolean hasSpace() {
-            return remaining > 0;
-        }
-
-        private int remaining() {
-            return remaining;
+        private SnapshotEntry(Node node, String path) {
+            this.node = node;
+            this.path = path;
         }
     }
 }

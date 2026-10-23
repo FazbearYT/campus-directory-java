@@ -9,6 +9,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ContactValidatorTest {
     @Test
+    void rejectsControlCharactersInPhone() {
+        for (String phone : new String[]{"+7\n123", "+7\r123", "+7\t123"}) {
+            assertFalse(new PersonalContact("Anna", phone, "", "").validate().isEmpty());
+        }
+    }
+
+    @Test
+    void rejectsNamesBeyondSupportedDepth() {
+        assertTrue(new PersonalContact("a".repeat(ContactValidator.MAXIMUM_NAME_LENGTH),
+                "123", "", "").validate().isEmpty());
+        assertFalse(new PersonalContact("a".repeat(ContactValidator.MAXIMUM_NAME_LENGTH + 1),
+                "123", "", "").validate().isEmpty());
+    }
+
+    @Test
     void acceptsValidPersonalContact() {
         var contact = new PersonalContact(
                 "Анна Смирнова",

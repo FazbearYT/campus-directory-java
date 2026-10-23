@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ContactTrieTest {
     @Test
@@ -108,6 +109,37 @@ class ContactTrieTest {
         assertEquals(10_000, trie.size());
         assertEquals(10_000, root.subtreeContactCount());
         assertEquals(500, countNodes(root));
+        assertEquals(16, root.children().length);
+        assertEquals(0, root.omittedChildCount());
+    }
+
+    @Test
+    void rejectsPathologicalKeysBeforeMutatingTree() {
+        var trie = new ContactTrie();
+        assertThrows(IllegalArgumentException.class, () -> trie.add(contact("a".repeat(6000))));
+        assertEquals(0, trie.size());
+        assertEquals(0, trie.snapshot().children().length);
+    }
+
+    @Test
+    void supportsMaximumNameLengthAndUnicodeLowercaseExpansion() {
+        var trie = new ContactTrie();
+        Contact longest = contact("\u0130".repeat(256));
+        trie.add(longest);
+        assertSame(longest, trie.findFirst(longest.getName()));
+        assertArrayEquals(new Contact[]{longest}, trie.getAll());
+        assertEquals(513, countNodes(trie.snapshot()));
+    }
+
+    @Test
+    void removesSelectedInstanceBeforeEqualDuplicate() {
+        var trie = new ContactTrie();
+        Contact first = contact("Anna");
+        Contact second = contact("Anna");
+        trie.add(first);
+        trie.add(second);
+        assertTrue(trie.remove(second));
+        assertSame(first, trie.findFirst("Anna"));
     }
 
     private PersonalContact contact(String name) {

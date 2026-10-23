@@ -210,9 +210,16 @@ public final class ContactCsvService {
         var fields = new ArrayList<String>();
         var current = new StringBuilder();
         boolean quoted = false;
+        boolean closedQuote = false;
 
         for (int index = 0; index < line.length(); index++) {
             char symbol = line.charAt(index);
+            if (closedQuote && symbol != DELIMITER) {
+                throw new ContactCsvException(
+                        CsvErrorCode.MALFORMED_QUOTES,
+                        "После закрывающей кавычки ожидается разделитель или конец строки"
+                );
+            }
             if (symbol == '"') {
                 if (quoted && index + 1 < line.length() && line.charAt(index + 1) == '"') {
                     current.append('"');
@@ -224,10 +231,12 @@ public final class ContactCsvService {
                     );
                 } else {
                     quoted = !quoted;
+                    closedQuote = !quoted;
                 }
             } else if (symbol == DELIMITER && !quoted) {
                 fields.add(current.toString());
                 current.setLength(0);
+                closedQuote = false;
             } else {
                 current.append(symbol);
             }

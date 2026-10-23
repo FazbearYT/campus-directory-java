@@ -25,6 +25,30 @@ class ContactCsvServiceTest {
     Path temporaryDirectory;
 
     @Test
+    void rejectsTextAfterClosingQuoteAndPreservesValidRows() throws Exception {
+        Path file = write("""
+                type;name;phone;email;organization;position;extension
+                PERSONAL;"Anna"garbage;123;;;;
+                PERSONAL;""garbage;123;;;;
+                PERSONAL;"Anna" ;123;;;;
+                PERSONAL;"Anna";123;;;;
+                """);
+        CsvLoadResult result = service.load(file);
+        assertEquals(1, result.contacts().size());
+        assertEquals(List.of(CsvErrorCode.MALFORMED_QUOTES, CsvErrorCode.MALFORMED_QUOTES,
+                CsvErrorCode.MALFORMED_QUOTES), result.errors().stream().map(CsvRowError::code).toList());
+    }
+
+    @Test
+    void invalidPhoneCannotOverwriteExistingFile() throws Exception {
+        Path file = write("existing data");
+        assertThrows(ContactCsvException.class, () -> service.save(file,
+                List.of(new PersonalContact("Anna", "+7\n123", "", ""))));
+        assertEquals("existing data", Files.readString(file));
+    }
+
+
+    @Test
     void loadsAllSupportedContactTypes() throws Exception {
         Path file = write("""
                 type;name;phone;email;organization;position;extension
