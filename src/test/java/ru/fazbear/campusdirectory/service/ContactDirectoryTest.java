@@ -8,6 +8,7 @@ import ru.fazbear.campusdirectory.model.EmergencyContact;
 import ru.fazbear.campusdirectory.model.PersonalContact;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ContactDirectoryTest {
@@ -56,5 +57,23 @@ class ContactDirectoryTest {
         var invalid = new PersonalContact("", "", "", "");
 
         assertThrows(ContactValidationException.class, () -> directory.replaceAll(List.of(invalid)));
+    }
+
+    @Test
+    void supportsTrieSearchAutocompleteAndRemoval() {
+        var directory = new ContactDirectory();
+        var anna = new PersonalContact("Анна", "112", "", "");
+        var anya = new PersonalContact("Аня", "113", "", "");
+        directory.add(anya);
+        directory.add(anna);
+
+        assertEquals(anna, directory.findFirstByName("АННА"));
+        assertEquals(List.of(anna, anya), directory.autocomplete("ан"));
+        assertEquals(2, directory.countByPrefix("ан"));
+
+        directory.remove(anna);
+
+        assertNull(directory.findFirstByName("анна"));
+        assertEquals(1, directory.size());
     }
 }
