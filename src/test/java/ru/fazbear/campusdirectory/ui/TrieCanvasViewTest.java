@@ -9,6 +9,9 @@ import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
 
@@ -18,14 +21,125 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import ru.fazbear.campusdirectory.model.PersonalContact;
+import ru.fazbear.campusdirectory.ContactDirectoryApp;
+import ru.fazbear.campusdirectory.service.ContactDirectory;
 import ru.fazbear.campusdirectory.service.ContactGenerator;
 import ru.fazbear.campusdirectory.trie.ContactTrie;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 @EnabledIfEnvironmentVariable(named = "CAMPUS_GUI_TESTS", matches = "true")
 class TrieCanvasViewTest {
     private static Stage stage;
+
+    @Test
+    void wideViewportIsFullyCoveredWithoutOversizedTexture() throws Exception {
+        onFx(() -> {
+            var trie = new ContactTrie();
+            for (var contact : new ContactGenerator().generate(1000)) {
+                trie.add(contact);
+            }
+            var view = new TrieCanvasView();
+            new Scene(view);
+            view.setSnapshot(trie.snapshot(500));
+            view.resize(3200, 900);
+            view.applyCss();
+            view.layout();
+            var scroll = (ScrollPane) view.getChildren().get(1);
+            var canvas = (Canvas) ((Pane) scroll.getContent()).getChildren().getFirst();
+            assertTrue(scroll.getViewportBounds().getWidth() > 3000);
+            assertTrue(canvas.getWidth() <= 2048);
+            assertEquals(scroll.getViewportBounds().getWidth(), canvas.getBoundsInParent().getWidth(), 0.1);
+            assertDrawn(canvas);
+            return null;
+        });
+    }
+
+    @Test
+    void windowCannotCloseWhileBackgroundOperationIsActive() throws Exception {
+        onFx(() -> {
+            var app = new ContactDirectoryApp();
+            app.start(stage);
+            var active = ContactDirectoryApp.class.getDeclaredField("activeTask");
+            active.setAccessible(true);
+            active.set(app, new javafx.concurrent.Task<Void>() {
+                @Override protected Void call() { return null; }
+            });
+            var event = new javafx.stage.WindowEvent(stage, javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST);
+            stage.getOnCloseRequest().handle(event);
+            assertTrue(event.isConsumed());
+            assertTrue(stage.isShowing());
+            active.set(app, null);
+            var idleEvent = new javafx.stage.WindowEvent(stage, javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST);
+            stage.getOnCloseRequest().handle(idleEvent);
+            assertTrue(!idleEvent.isConsumed());
+            return null;
+        });
+    }
+
+    @Test
+    void refreshAndSearchKeepTheSelectedTableSortOrder() throws Exception {
+        onFx(() -> {
+            var app = new ContactDirectoryApp();
+            app.start(stage);
+            var directory = (ContactDirectory) field(app, "directory");
+            directory.add(new PersonalContact("Anna", "123", "", ""));
+            directory.add(new PersonalContact("Zoe", "456", "", ""));
+            invoke(app, "refreshAll");
+            var table = (TableView<?>) field(app, "table");
+            sortByNameDescending(table);
+            invoke(app, "refreshAll");
+            assertEquals("Zoe", ((PersonalContact) table.getItems().getFirst()).getName());
+            ((TextField) field(app, "prefixField")).setText("");
+            invoke(app, "autocomplete");
+            assertEquals("Zoe", ((PersonalContact) table.getItems().getFirst()).getName());
+            ((TextField) field(app, "prefixField")).setText("Anna");
+            invoke(app, "findContact");
+            assertEquals("Zoe", ((PersonalContact) table.getItems().getFirst()).getName());
+            return null;
+        });
+    }
+
+    @Test
+    void selectingEqualContactKeepsItsIdentity() throws Exception {
+        onFx(() -> {
+            var app = new ContactDirectoryApp();
+            app.start(stage);
+            var directory = (ContactDirectory) field(app, "directory");
+            var first = new PersonalContact("Anna", "123", "", "");
+            var second = new PersonalContact("Anna", "123", "", "");
+            directory.add(first);
+            directory.add(second);
+            invoke(app, "refreshAll");
+            var method = ContactDirectoryApp.class.getDeclaredMethod("selectContact",
+                    ru.fazbear.campusdirectory.model.Contact.class);
+            method.setAccessible(true);
+            method.invoke(app, second);
+            assertSame(second, ((TableView<?>) field(app, "table")).getSelectionModel().getSelectedItem());
+            return null;
+        });
+    }
+
+    private static <T> void sortByNameDescending(TableView<T> table) {
+        TableColumn<T, ?> name = table.getColumns().get(1);
+        name.setSortType(TableColumn.SortType.DESCENDING);
+        table.getSortOrder().add(name);
+        table.sort();
+    }
+
+    private static Object field(ContactDirectoryApp app, String name) throws Exception {
+        var field = ContactDirectoryApp.class.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(app);
+    }
+
+    private static void invoke(ContactDirectoryApp app, String name) throws Exception {
+        var method = ContactDirectoryApp.class.getDeclaredMethod(name);
+        method.setAccessible(true);
+        method.invoke(app);
+    }
 
     @BeforeAll
     static void startJavaFx() throws Exception {

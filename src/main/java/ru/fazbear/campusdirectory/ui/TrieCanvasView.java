@@ -16,6 +16,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
+import javafx.scene.transform.Scale;
 
 import ru.fazbear.campusdirectory.trie.TrieNodeSnapshot;
 
@@ -28,6 +29,7 @@ public final class TrieCanvasView extends VBox {
 
     private final Label summary = new Label("Trie пока пуст");
     private final Canvas canvas = new Canvas(900, 560);
+    private final Scale canvasScale = new Scale(1, 1, 0, 0);
     private final Pane drawingArea = new Pane(canvas);
     private final ScrollPane scrollPane = new ScrollPane(drawingArea);
     private TrieNodeSnapshot displayedRoot;
@@ -37,6 +39,7 @@ public final class TrieCanvasView extends VBox {
 
     public TrieCanvasView() {
         canvas.setManaged(false);
+        canvas.getTransforms().add(canvasScale);
         setSpacing(8);
         summary.setStyle("-fx-text-fill: #5f6368;");
         summary.setWrapText(true);
@@ -136,13 +139,17 @@ public final class TrieCanvasView extends VBox {
         double viewportHeight = Math.max(1, scrollPane.getViewportBounds().getHeight());
         double offsetX = Math.max(0, drawingWidth - viewportWidth) * scrollPane.getHvalue();
         double offsetY = Math.max(0, drawingHeight - viewportHeight) * scrollPane.getVvalue();
-        canvas.setWidth(Math.min(MAXIMUM_VIEWPORT_SIZE, viewportWidth));
-        canvas.setHeight(Math.min(MAXIMUM_VIEWPORT_SIZE, viewportHeight));
+        double renderScale = Math.min(1, MAXIMUM_VIEWPORT_SIZE / Math.max(viewportWidth, viewportHeight));
+        canvas.setWidth(viewportWidth * renderScale);
+        canvas.setHeight(viewportHeight * renderScale);
+        canvasScale.setX(1 / renderScale);
+        canvasScale.setY(1 / renderScale);
         canvas.relocate(offsetX, offsetY);
         GraphicsContext graphics = canvas.getGraphicsContext2D();
         graphics.setFill(Color.WHITE);
         graphics.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
         graphics.save();
+        graphics.scale(renderScale, renderScale);
         graphics.translate(-offsetX, -offsetY);
         drawEdges(displayedRoot, displayedPositions, graphics);
         drawNodes(displayedRoot, displayedPositions, graphics);

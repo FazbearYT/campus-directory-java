@@ -112,6 +112,12 @@ public final class ContactDirectoryApp extends Application {
         stage.setMinWidth(1120);
         stage.setMinHeight(680);
         stage.setScene(new Scene(root, 1500, 860));
+        stage.setOnCloseRequest(event -> {
+            if (activeTask != null) {
+                event.consume();
+                statusLabel.setText("Дождитесь завершения операции или отмените её перед закрытием окна.");
+            }
+        });
         stage.show();
     }
 
@@ -207,7 +213,7 @@ public final class ContactDirectoryApp extends Application {
         ContactDialog.showCreate(stage).ifPresent(contact -> {
             directory.add(contact);
             refreshAll();
-            table.getSelectionModel().select(contact);
+            selectContact(contact);
         });
     }
 
@@ -219,7 +225,7 @@ public final class ContactDirectoryApp extends Application {
         ContactDialog.showEdit(stage, selected).ifPresent(replacement -> {
             directory.update(selected, replacement);
             refreshAll();
-            table.getSelectionModel().select(replacement);
+            selectContact(replacement);
         });
     }
 
@@ -258,8 +264,8 @@ public final class ContactDirectoryApp extends Application {
             statusLabel.setText("Контакт не найден; посещённый путь подсвечен на Trie");
         } else {
             table.getItems().setAll(directory.getAll());
-            table.getSelectionModel().select(found);
-            table.scrollTo(found);
+            table.sort();
+            selectContact(found);
             statusLabel.setText("Найден контакт: " + found.getName());
         }
     }
@@ -269,6 +275,8 @@ public final class ContactDirectoryApp extends Application {
         List<Contact> matches = directory.autocomplete(prefix);
         int count = directory.countByPrefix(prefix);
         table.getItems().setAll(matches);
+        table.sort();
+        table.setPlaceholder(new Label("По этому префиксу контакты не найдены"));
         statusLabel.setText("Префикс «%s»: найдено контактов — %d".formatted(prefix.strip(), count));
         refreshVisualization();
     }
@@ -497,8 +505,20 @@ public final class ContactDirectoryApp extends Application {
 
     private void refreshAll() {
         table.getItems().setAll(directory.getAll());
+        table.sort();
+        table.setPlaceholder(new Label("Контакты пока не добавлены"));
         statusLabel.setText("Контактов: " + directory.size());
         refreshVisualization();
+    }
+
+    private void selectContact(Contact contact) {
+        for (int index = 0; index < table.getItems().size(); index++) {
+            if (table.getItems().get(index) == contact) {
+                table.getSelectionModel().select(index);
+                table.scrollTo(index);
+                return;
+            }
+        }
     }
 
     private void refreshVisualization() {

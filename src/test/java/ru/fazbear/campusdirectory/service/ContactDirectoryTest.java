@@ -14,6 +14,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ContactDirectoryTest {
     @Test
+    void invalidLaterImportedContactDoesNotPartiallyReplaceDirectory() {
+        var directory = new ContactDirectory();
+        var original = new PersonalContact("Original", "123", "", "");
+        directory.add(original);
+        assertThrows(ContactValidationException.class, () -> directory.replaceAll(List.of(
+                new PersonalContact("Valid", "456", "", ""),
+                new PersonalContact("Invalid", "---", "", ""))));
+        assertEquals(List.of(original), directory.getAll());
+        assertEquals(0, directory.countByPrefix("Valid"));
+    }
+    @Test
     void keepsPreviousDataWhenCancelledByFinalProgressCallback() {
         var directory = new ContactDirectory();
         var original = new PersonalContact("Anna", "123", "", "");

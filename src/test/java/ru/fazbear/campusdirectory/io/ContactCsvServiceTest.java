@@ -25,6 +25,31 @@ class ContactCsvServiceTest {
     Path temporaryDirectory;
 
     @Test
+    void reportsMissingFileAndInvalidUtf8AsIoErrors() throws Exception {
+        Path missing = temporaryDirectory.resolve("missing.csv");
+        assertEquals(CsvErrorCode.IO_ERROR,
+                assertThrows(ContactCsvException.class, () -> service.load(missing)).getCode());
+        Path malformed = temporaryDirectory.resolve("invalid-utf8.csv");
+        Files.write(malformed, new byte[]{(byte) 0xc3, 0x28});
+        assertEquals(CsvErrorCode.IO_ERROR,
+                assertThrows(ContactCsvException.class, () -> service.load(malformed)).getCode());
+    }
+
+    @Test
+    void failedReplacementKeepsTargetAndRemovesTemporaryFile() throws Exception {
+        Path target = Files.createDirectory(temporaryDirectory.resolve("contacts.csv"));
+        Path original = target.resolve("keep.txt");
+        Files.writeString(original, "original");
+        assertEquals(CsvErrorCode.IO_ERROR, assertThrows(ContactCsvException.class,
+                () -> service.save(target, List.of(new PersonalContact("Anna", "123", "", ""))))
+                .getCode());
+        assertEquals("original", Files.readString(original));
+        try (var files = Files.list(temporaryDirectory)) {
+            assertEquals(List.of(target), files.toList());
+        }
+    }
+
+    @Test
     void roundTripsRandomFieldsWithDelimitersQuotesAndUnicode() throws Exception {
         var random = new java.util.Random(20261023L);
         var contacts = new java.util.ArrayList<Contact>();
