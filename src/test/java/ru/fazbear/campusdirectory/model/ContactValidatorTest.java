@@ -9,6 +9,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ContactValidatorTest {
     @Test
+    void rejectsPhonesWithoutEnoughDigitsOrWithMisplacedPlus() {
+        for (String phone : new String[]{"---", "( )", "+++", "+1-", "12-", "12+3", "++123"}) {
+            assertFalse(new PersonalContact("Anna", phone, "", "").validate().isEmpty(), phone);
+        }
+        for (String phone : new String[]{"112", "+7 (913) 555-12-34", "123-45", "1".repeat(25)}) {
+            assertTrue(new PersonalContact("Anna", phone, "", "").validate().isEmpty(), phone);
+        }
+    }
+
+    @Test
+    void rejectsEmptyPartsOfEmailLocalName() {
+        for (String email : new String[]{".@example.com", ".anna@example.com", "anna.@example.com",
+                "anna..smith@example.com"}) {
+            assertFalse(new PersonalContact("Anna", "123", email, "").validate().isEmpty(), email);
+        }
+        assertTrue(new PersonalContact("Anna", "123", "anna.smith+work@example.com", "").validate().isEmpty());
+    }
+    @Test
     void rejectsControlCharactersInPhone() {
         for (String phone : new String[]{"+7\n123", "+7\r123", "+7\t123"}) {
             assertFalse(new PersonalContact("Anna", phone, "", "").validate().isEmpty());

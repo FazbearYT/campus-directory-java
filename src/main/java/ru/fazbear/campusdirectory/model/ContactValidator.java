@@ -27,11 +27,15 @@ public final class ContactValidator {
 
         if (contact.getPhone().isBlank()) {
             errors.add("Телефон обязателен");
-        } else if (!PHONE_PATTERN.matcher(contact.getPhone()).matches()) {
-            errors.add("Телефон содержит недопустимые символы");
+        } else if (!PHONE_PATTERN.matcher(contact.getPhone()).matches()
+                || contact.getPhone().chars().filter(symbol -> symbol >= '0' && symbol <= '9').count() < 3
+                || contact.getPhone().indexOf('+', 1) >= 0) {
+            errors.add("Телефон: от 3 до 25 символов, минимум 3 цифры; + допустим только в начале");
         }
 
-        if (!contact.getEmail().isBlank() && !EMAIL_PATTERN.matcher(contact.getEmail()).matches()) {
+        if (!contact.getEmail().isBlank() && (!EMAIL_PATTERN.matcher(contact.getEmail()).matches()
+                || contact.getEmail().startsWith(".") || contact.getEmail().contains("..")
+                || contact.getEmail().contains(".@"))) {
             errors.add("E-mail имеет неверный формат");
         }
 

@@ -1,6 +1,8 @@
 package ru.fazbear.campusdirectory.service;
 
 import java.util.concurrent.CancellationException;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ContactGeneratorTest {
     private final ContactGenerator generator = new ContactGenerator();
+
+    @Test
+    void generationIsIndependentOfDefaultLocale() {
+        Locale previous = Locale.getDefault(Locale.Category.FORMAT);
+        try {
+            Locale.setDefault(Locale.Category.FORMAT, Locale.forLanguageTag("ar-EG"));
+            for (var contact : generator.generate(20)) {
+                assertTrue(ContactValidator.validate(contact).isEmpty(), contact.toString());
+            }
+        } finally {
+            Locale.setDefault(Locale.Category.FORMAT, previous);
+        }
+    }
+
+    @Test
+    void cancellationAtFinalProgressAndForEmptyBatchIsRespected() {
+        var cancelled = new AtomicBoolean();
+        assertThrows(CancellationException.class, () -> generator.generate(1, cancelled::get,
+                done -> cancelled.set(true)));
+        assertThrows(CancellationException.class, () -> generator.generate(0, () -> true, done -> { }));
+    }
 
     @Test
     void createsRequestedNumberOfValidContacts() {

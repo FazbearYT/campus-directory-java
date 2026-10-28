@@ -1,5 +1,6 @@
 package ru.fazbear.campusdirectory.service;
 
+import java.util.Locale;
 import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
@@ -43,19 +44,22 @@ public final class ContactGenerator {
                 progress.accept(index + 1);
             }
         }
+        if (cancelled.getAsBoolean()) {
+            throw new CancellationException("Генерация отменена");
+        }
         return contacts;
     }
 
     private Contact createContact(int index) {
         String firstName = FIRST_NAMES[index % FIRST_NAMES.length];
         String lastName = LAST_NAMES[(index / FIRST_NAMES.length) % LAST_NAMES.length];
-        String name = "%s %s %06d".formatted(firstName, lastName, index + 1);
-        String phone = "+7 900 %03d-%02d-%02d".formatted(
+        String name = String.format(Locale.ROOT, "%s %s %06d", firstName, lastName, index + 1);
+        String phone = String.format(Locale.ROOT, "+7 900 %03d-%02d-%02d",
                 index % 1_000,
                 (index / 1_000) % 100,
                 (index / 100_000) % 100
         );
-        String email = "contact%06d@example.com".formatted(index + 1);
+        String email = String.format(Locale.ROOT, "contact%06d@example.com", index + 1);
 
         if (index % 3 == 0) {
             return new CorporateContact(
