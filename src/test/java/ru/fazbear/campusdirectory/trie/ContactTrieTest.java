@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ContactTrieTest {
     @Test
     void insertsAndFindsContactIgnoringCase() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         Contact contact = contact("Анна");
 
         trie.add(contact);
@@ -28,7 +28,7 @@ class ContactTrieTest {
 
     @Test
     void storesContactsWithTheSameName() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         Contact first = contact("Анна");
         Contact second = new PersonalContact("Анна", "113", "", "");
 
@@ -41,7 +41,7 @@ class ContactTrieTest {
 
     @Test
     void autocompletesInLexicographicalOrder() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         Contact maria = contact("Мария");
         Contact mark = contact("Марк");
         Contact anna = contact("Анна");
@@ -55,7 +55,7 @@ class ContactTrieTest {
 
     @Test
     void removesContactAndPrunesEmptyBranch() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         Contact anna = contact("Анна");
         Contact anya = contact("Аня");
         trie.add(anna);
@@ -71,7 +71,7 @@ class ContactTrieTest {
 
     @Test
     void marksNodesVisitedByLastOperation() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         trie.add(contact("Анна"));
 
         trie.findFirst("Ан");
@@ -85,7 +85,7 @@ class ContactTrieTest {
 
     @Test
     void limitsVisualizationSnapshotWithoutChangingCounts() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         trie.add(contact("Анна"));
         trie.add(contact("Борис"));
 
@@ -98,7 +98,7 @@ class ContactTrieTest {
 
     @Test
     void handlesLargeGeneratedDatasetAndBoundedSnapshot() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         Contact[] contacts = new ContactGenerator().generate(10_000);
         for (Contact contact : contacts) {
             trie.add(contact);
@@ -115,7 +115,7 @@ class ContactTrieTest {
 
     @Test
     void rejectsPathologicalKeysBeforeMutatingTree() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         assertThrows(IllegalArgumentException.class, () -> trie.add(contact("a".repeat(6000))));
         assertEquals(0, trie.size());
         assertEquals(0, trie.snapshot().children().length);
@@ -123,7 +123,7 @@ class ContactTrieTest {
 
     @Test
     void supportsMaximumNameLengthAndUnicodeLowercaseExpansion() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         Contact longest = contact("\u0130".repeat(256));
         trie.add(longest);
         assertSame(longest, trie.findFirst(longest.getName()));
@@ -133,7 +133,7 @@ class ContactTrieTest {
 
     @Test
     void removesSelectedInstanceBeforeEqualDuplicate() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         Contact first = contact("Anna");
         Contact second = contact("Anna");
         trie.add(first);
@@ -144,7 +144,7 @@ class ContactTrieTest {
 
     @Test
     void limitsSnapshotDepthWithoutLosingUnderlyingContact() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         Contact contact = contact("a".repeat(256));
         trie.add(contact);
         TrieNodeSnapshot snapshot = trie.snapshot(500, 128);

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
+import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.PersonalContact;
 import ru.fazbear.campusdirectory.ContactDirectoryApp;
 import ru.fazbear.campusdirectory.service.ContactDirectory;
@@ -37,7 +38,7 @@ class TrieCanvasViewTest {
     @Test
     void wideViewportIsFullyCoveredWithoutOversizedTexture() throws Exception {
         onFx(() -> {
-            var trie = new ContactTrie();
+            var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
             for (var contact : new ContactGenerator().generate(1000)) {
                 trie.add(contact);
             }
@@ -157,7 +158,7 @@ class TrieCanvasViewTest {
 
     @Test
     void rendersBroadTreeUsingOnlyViewportSizedTexture() throws Exception {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         for (var contact : new ContactGenerator().generate(10_000)) {
             trie.add(contact);
         }
@@ -188,7 +189,7 @@ class TrieCanvasViewTest {
 
     @Test
     void scrollsToBottomOfLongKeyWithoutAllocatingFullHeightCanvas() throws Exception {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         trie.add(new PersonalContact("a".repeat(256), "123", "", ""));
         TrieCanvasView view = onFx(() -> {
             var result = new TrieCanvasView();

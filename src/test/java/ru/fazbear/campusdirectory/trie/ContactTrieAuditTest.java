@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ContactTrieAuditTest {
     @Test
     void agreesWithReferenceModelDuringFiftyThousandMixedOperations() {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         var reference = new ArrayList<Contact>();
         var random = new Random(20261023L);
         String[] names = {"Анна", " АННА ", "Аня", "Ан", "Мария", "Марк", "Ёлка", "Ян", "Alex"};
@@ -61,7 +61,7 @@ class ContactTrieAuditTest {
 
     @Test
     void supportsConcurrentInsertionReadingAndRemoval() throws Exception {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
         var contacts = new Contact[16_000];
         for (int index = 0; index < contacts.length; index++) {
             contacts[index] = new PersonalContact("Contact " + index, "123", "", "");

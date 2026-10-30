@@ -47,7 +47,7 @@ public final class TrieBenchmarkService {
     }
 
     private TrieBenchmarkResult measure(Contact[] contacts, BooleanSupplier cancelled) {
-        var trie = new ContactTrie();
+        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
 
         long insertionStarted = System.nanoTime();
         for (int index = 0; index < contacts.length; index++) {
