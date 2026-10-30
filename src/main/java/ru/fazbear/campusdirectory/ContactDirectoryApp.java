@@ -70,6 +70,7 @@ public final class ContactDirectoryApp extends Application {
     private final HBox searchActions = new HBox(10);
     private Task<?> activeTask;
     private Stage stage;
+    private File csvDirectory;
 
     @Override
     public void start(Stage stage) {
@@ -262,13 +263,15 @@ public final class ContactDirectoryApp extends Application {
         Contact found = directory.findFirstByName(name);
         refreshVisualization();
         if (found == null) {
+            table.getItems().clear();
             table.getSelectionModel().clearSelection();
+            table.setPlaceholder(new Label("Контакт с таким полным именем не найден"));
             statusLabel.setText("Контакт не найден; посещённый путь подсвечен на Trie");
         } else {
-            table.getItems().setAll(directory.getAll());
+            table.getItems().setAll(found);
             table.sort();
             selectContact(found);
-            statusLabel.setText("Найден контакт: " + found.getName());
+            statusLabel.setText("Найден первый контакт с точным именем: " + found.getName());
         }
     }
 
@@ -447,6 +450,7 @@ public final class ContactDirectoryApp extends Application {
         if (file == null) {
             return;
         }
+        csvDirectory = file.getParentFile();
         if (!confirmReplacement("Загрузить новый набор из CSV?")) {
             return;
         }
@@ -496,6 +500,7 @@ public final class ContactDirectoryApp extends Application {
         if (file == null) {
             return;
         }
+        csvDirectory = file.getParentFile();
         List<Contact> snapshot = directory.getAll();
         var task = new Task<Void>() {
             @Override
@@ -517,6 +522,16 @@ public final class ContactDirectoryApp extends Application {
     private FileChooser csvChooser(String title) {
         var chooser = new FileChooser();
         chooser.setTitle(title);
+        if (csvDirectory == null || !csvDirectory.isDirectory()) {
+            csvDirectory = new File(System.getProperty("user.dir"));
+            for (File candidate : new File[]{new File("samples"), new File("campus-directory", "samples")}) {
+                if (candidate.isDirectory()) {
+                    csvDirectory = candidate.getAbsoluteFile();
+                    break;
+                }
+            }
+        }
+        chooser.setInitialDirectory(csvDirectory);
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV-файлы", "*.csv"));
         return chooser;
     }

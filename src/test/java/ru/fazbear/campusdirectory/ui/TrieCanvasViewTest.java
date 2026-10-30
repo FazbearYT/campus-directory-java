@@ -36,6 +36,64 @@ class TrieCanvasViewTest {
     private static Stage stage;
 
     @Test
+    void exactSearchReplacesEarlierPrefixResultsAndEnterRunsAutocomplete() throws Exception {
+        onFx(() -> {
+            var app = new ContactDirectoryApp();
+            app.start(stage);
+            var directory = (ContactDirectory) field(app, "directory");
+            var anna = new PersonalContact("Anna", "123", "", "");
+            var annabel = new PersonalContact("Annabel", "456", "", "");
+            var zoe = new PersonalContact("Zoe", "789", "", "");
+            directory.add(anna);
+            directory.add(annabel);
+            directory.add(zoe);
+            var input = (TextField) field(app, "prefixField");
+            var table = (TableView<?>) field(app, "table");
+            input.setText("Ann");
+            input.fireEvent(new javafx.event.ActionEvent());
+            assertEquals(java.util.List.of(anna, annabel), table.getItems());
+            input.setText("Missing");
+            invoke(app, "findContact");
+            assertTrue(table.getItems().isEmpty());
+            assertTrue(table.getSelectionModel().isEmpty());
+            input.setText("Zoe");
+            invoke(app, "findContact");
+            assertEquals(java.util.List.of(zoe), table.getItems());
+            assertSame(zoe, table.getSelectionModel().getSelectedItem());
+            input.setText("Anna");
+            input.fireEvent(new javafx.event.ActionEvent());
+            assertEquals(java.util.List.of(anna, annabel), table.getItems());
+            invoke(app, "findContact");
+            assertEquals(java.util.List.of(anna), table.getItems());
+            invoke(app, "refreshAll");
+            assertEquals(3, table.getItems().size());
+            return null;
+        });
+    }
+
+    @Test
+    void csvChooserStartsInSamplesAndRemembersAnExistingDirectory() throws Exception {
+        onFx(() -> {
+            var app = new ContactDirectoryApp();
+            var method = ContactDirectoryApp.class.getDeclaredMethod("csvChooser", String.class);
+            method.setAccessible(true);
+            var chooser = (javafx.stage.FileChooser) method.invoke(app, "CSV");
+            assertEquals(new java.io.File("samples").getCanonicalFile(),
+                    chooser.getInitialDirectory().getCanonicalFile());
+            var remembered = ContactDirectoryApp.class.getDeclaredField("csvDirectory");
+            remembered.setAccessible(true);
+            remembered.set(app, new java.io.File("src").getAbsoluteFile());
+            chooser = (javafx.stage.FileChooser) method.invoke(app, "CSV");
+            assertEquals(new java.io.File("src").getCanonicalFile(),
+                    chooser.getInitialDirectory().getCanonicalFile());
+            remembered.set(app, new java.io.File("missing-directory-for-test"));
+            chooser = (javafx.stage.FileChooser) method.invoke(app, "CSV");
+            assertTrue(chooser.getInitialDirectory().isDirectory());
+            return null;
+        });
+    }
+
+    @Test
     void comparisonRunsInBackgroundAndShowsBothStoresAndBothSizes() throws Exception {
         var app = onFx(() -> {
             var result = new ContactDirectoryApp();
@@ -153,6 +211,9 @@ class TrieCanvasViewTest {
             assertEquals("Zoe", ((PersonalContact) table.getItems().getFirst()).getName());
             ((TextField) field(app, "prefixField")).setText("Anna");
             invoke(app, "findContact");
+            assertEquals(1, table.getItems().size());
+            assertEquals("Anna", ((PersonalContact) table.getItems().getFirst()).getName());
+            invoke(app, "refreshAll");
             assertEquals("Zoe", ((PersonalContact) table.getItems().getFirst()).getName());
             return null;
         });
