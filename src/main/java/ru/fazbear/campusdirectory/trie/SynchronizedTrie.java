@@ -3,10 +3,10 @@ package ru.fazbear.campusdirectory.trie;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 
-public final class ContactTrie<T> {
+public final class SynchronizedTrie<T> {
     private final TrieStorage<T> storage;
 
-    public ContactTrie(Function<? super T, String> keyExtractor, IntFunction<T[]> arrayFactory) {
+    public SynchronizedTrie(Function<? super T, String> keyExtractor, IntFunction<T[]> arrayFactory) {
         storage = new TrieStorage<>(keyExtractor, arrayFactory);
     }
 

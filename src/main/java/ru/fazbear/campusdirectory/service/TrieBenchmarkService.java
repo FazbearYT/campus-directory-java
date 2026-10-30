@@ -6,7 +6,7 @@ import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
 import ru.fazbear.campusdirectory.model.Contact;
-import ru.fazbear.campusdirectory.trie.ContactTrie;
+import ru.fazbear.campusdirectory.trie.SynchronizedTrie;
 
 public final class TrieBenchmarkService {
     private static final int ADDITIONAL_OPERATION_REPETITIONS = 100;
@@ -47,7 +47,7 @@ public final class TrieBenchmarkService {
     }
 
     private TrieBenchmarkResult measure(Contact[] contacts, BooleanSupplier cancelled) {
-        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
+        var trie = new SynchronizedTrie<Contact>(Contact::getName, Contact[]::new);
 
         long insertionStarted = System.nanoTime();
         for (int index = 0; index < contacts.length; index++) {

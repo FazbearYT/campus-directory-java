@@ -25,7 +25,7 @@ import ru.fazbear.campusdirectory.model.PersonalContact;
 import ru.fazbear.campusdirectory.ContactDirectoryApp;
 import ru.fazbear.campusdirectory.service.ContactDirectory;
 import ru.fazbear.campusdirectory.service.ContactGenerator;
-import ru.fazbear.campusdirectory.trie.ContactTrie;
+import ru.fazbear.campusdirectory.trie.SynchronizedTrie;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -93,7 +93,7 @@ class TrieCanvasViewTest {
     @Test
     void wideViewportIsFullyCoveredWithoutOversizedTexture() throws Exception {
         onFx(() -> {
-            var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
+            var trie = new SynchronizedTrie<Contact>(Contact::getName, Contact[]::new);
             for (var contact : new ContactGenerator().generate(1000)) {
                 trie.add(contact);
             }
@@ -213,7 +213,7 @@ class TrieCanvasViewTest {
 
     @Test
     void rendersBroadTreeUsingOnlyViewportSizedTexture() throws Exception {
-        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
+        var trie = new SynchronizedTrie<Contact>(Contact::getName, Contact[]::new);
         for (var contact : new ContactGenerator().generate(10_000)) {
             trie.add(contact);
         }
@@ -244,7 +244,7 @@ class TrieCanvasViewTest {
 
     @Test
     void scrollsToBottomOfLongKeyWithoutAllocatingFullHeightCanvas() throws Exception {
-        var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
+        var trie = new SynchronizedTrie<Contact>(Contact::getName, Contact[]::new);
         trie.add(new PersonalContact("a".repeat(256), "123", "", ""));
         TrieCanvasView view = onFx(() -> {
             var result = new TrieCanvasView();

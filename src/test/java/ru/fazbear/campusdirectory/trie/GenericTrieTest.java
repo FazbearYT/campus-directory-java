@@ -14,7 +14,7 @@ class GenericTrieTest {
         var writerInside = new java.util.concurrent.CountDownLatch(1);
         var releaseWriter = new java.util.concurrent.CountDownLatch(1);
         var readerStarted = new java.util.concurrent.CountDownLatch(1);
-        var trie = new ContactTrie<String>(value -> {
+        var trie = new SynchronizedTrie<String>(value -> {
             writerInside.countDown();
             try {
                 if (!releaseWriter.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -50,7 +50,7 @@ class GenericTrieTest {
 
     @Test
     void storesAnIndependentDomainTypeAndReturnsTypedArrays() {
-        var trie = new ContactTrie<Book>(Book::title, Book[]::new);
+        var trie = new SynchronizedTrie<Book>(Book::title, Book[]::new);
         var first = new Book("Algorithms", 1);
         var second = new Book("Algorithms", 2);
         var third = new Book("Algebra", 1);
@@ -67,7 +67,7 @@ class GenericTrieTest {
 
     @Test
     void returnedArrayCannotChangeStoredReferences() {
-        var trie = new ContactTrie<String>(value -> value, String[]::new);
+        var trie = new SynchronizedTrie<String>(value -> value, String[]::new);
         trie.add("alpha");
         trie.getAll()[0] = "changed";
         assertEquals("alpha", trie.findFirst("alpha"));
@@ -77,7 +77,7 @@ class GenericTrieTest {
 
     @Test
     void rejectsInvalidKeyBeforeChangingStructure() {
-        var trie = new ContactTrie<Book>(Book::title, Book[]::new);
+        var trie = new SynchronizedTrie<Book>(Book::title, Book[]::new);
         assertThrows(NullPointerException.class, () -> trie.add(new Book(null, 1)));
         assertThrows(IllegalArgumentException.class, () -> trie.add(new Book(" ", 1)));
         assertEquals(0, trie.size());

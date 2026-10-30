@@ -17,7 +17,7 @@ public final class ConcurrencyExperiment {
         }
         check(cancelled);
         var unsafe = new TrieStorage<String>(value -> value, String[]::new);
-        var safe = new ContactTrie<String>(value -> value, String[]::new);
+        var safe = new SynchronizedTrie<String>(value -> value, String[]::new);
         var start = new CountDownLatch(1);
         var ready = new CountDownLatch(workers);
         var errors = new AtomicInteger();

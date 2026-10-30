@@ -8,11 +8,11 @@ import java.util.function.IntConsumer;
 import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.ContactValidator;
 import ru.fazbear.campusdirectory.model.Editable;
-import ru.fazbear.campusdirectory.trie.ContactTrie;
+import ru.fazbear.campusdirectory.trie.SynchronizedTrie;
 import ru.fazbear.campusdirectory.trie.TrieNodeSnapshot;
 
 public final class ContactDirectory {
-    private ContactTrie<Contact> contacts = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
+    private SynchronizedTrie<Contact> contacts = new SynchronizedTrie<Contact>(Contact::getName, Contact[]::new);
 
     public List<Contact> getAll() {
         return List.of(contacts.getAll());
@@ -76,7 +76,7 @@ public final class ContactDirectory {
             BooleanSupplier cancelled,
             IntConsumer progress
     ) {
-        var replacement = new ContactTrie<Contact>(Contact::getName, Contact[]::new);
+        var replacement = new SynchronizedTrie<Contact>(Contact::getName, Contact[]::new);
         for (int index = 0; index < loadedContacts.size(); index++) {
             if (cancelled.getAsBoolean()) {
                 throw new CancellationException("Построение Trie отменено");
