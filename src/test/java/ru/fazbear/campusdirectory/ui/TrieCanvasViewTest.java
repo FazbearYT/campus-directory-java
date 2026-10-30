@@ -36,6 +36,61 @@ class TrieCanvasViewTest {
     private static Stage stage;
 
     @Test
+    void comparisonRunsInBackgroundAndShowsBothStoresAndBothSizes() throws Exception {
+        var app = onFx(() -> {
+            var result = new ContactDirectoryApp();
+            result.start(stage);
+            invoke(result, "runBenchmarks");
+            assertTrue(field(result, "activeTask") != null);
+            assertTrue(((javafx.scene.Node) field(result, "dataActions")).isDisabled());
+            return result;
+        });
+        String text = waitForResultDialog("Замеры Trie");
+        assertTrue(text.contains("Trie"));
+        assertTrue(text.contains("TreeMap"));
+        assertTrue(text.replaceAll("[^0-9\\n]", "").contains("100000"));
+        assertTrue(onFx(() -> field(app, "activeTask") == null));
+    }
+
+    @Test
+    void concurrentExperimentShowsResultsAndKeepsDirectoryUntouched() throws Exception {
+        var app = onFx(() -> {
+            var result = new ContactDirectoryApp();
+            result.start(stage);
+            ((ContactDirectory) field(result, "directory")).add(new PersonalContact("Keep", "123", "", ""));
+            invoke(result, "runConcurrencyExperiment");
+            return result;
+        });
+        String text = waitForResultDialog("Конкурентная запись");
+        assertTrue(text.contains("Без синхронизации"));
+        assertTrue(text.contains("С synchronized"));
+        assertTrue(text.contains("16000"));
+        assertEquals(1, onFx(() -> ((ContactDirectory) field(app, "directory")).size()));
+    }
+
+    private static String waitForResultDialog(String title) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline) {
+            String text = onFx(() -> {
+                for (var window : java.util.List.copyOf(javafx.stage.Window.getWindows())) {
+                    if (window instanceof Stage dialog && title.equals(dialog.getTitle())
+                            && dialog.getScene().getRoot() instanceof javafx.scene.control.DialogPane pane) {
+                        try {
+                            return ((javafx.scene.control.TextArea) pane.getContent()).getText();
+                        } finally {
+                            ((javafx.scene.control.Button) pane.lookupButton(javafx.scene.control.ButtonType.OK)).fire();
+                        }
+                    }
+                }
+                return null;
+            });
+            if (text != null) { return text; }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("Не появилось окно результата: " + title);
+    }
+
+    @Test
     void wideViewportIsFullyCoveredWithoutOversizedTexture() throws Exception {
         onFx(() -> {
             var trie = new ContactTrie<Contact>(Contact::getName, Contact[]::new);

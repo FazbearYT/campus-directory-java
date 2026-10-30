@@ -27,8 +27,8 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
@@ -45,6 +45,8 @@ import ru.fazbear.campusdirectory.service.ContactDirectory;
 import ru.fazbear.campusdirectory.service.ContactGenerator;
 import ru.fazbear.campusdirectory.service.TrieBenchmarkResult;
 import ru.fazbear.campusdirectory.service.TrieBenchmarkService;
+import ru.fazbear.campusdirectory.service.TreeMapBenchmarkService;
+import ru.fazbear.campusdirectory.trie.ConcurrencyExperiment;
 import ru.fazbear.campusdirectory.ui.ContactDialog;
 import ru.fazbear.campusdirectory.ui.TrieCanvasView;
 
@@ -64,7 +66,7 @@ public final class ContactDirectoryApp extends Application {
     private final Label operationLabel = new Label();
     private final ProgressBar operationProgress = new ProgressBar(0);
     private final Button cancelOperationButton = new Button("Отменить");
-    private final HBox dataActions = new HBox(10);
+    private final FlowPane dataActions = new FlowPane(10, 8);
     private final HBox searchActions = new HBox(10);
     private Task<?> activeTask;
     private Stage stage;
@@ -127,6 +129,7 @@ public final class ContactDirectoryApp extends Application {
         Button deleteButton = new Button("Удалить");
         Button generateButton = new Button("Сгенерировать");
         Button benchmarkButton = new Button("Замеры");
+        Button concurrencyButton = new Button("Гонка потоков");
         Button loadButton = new Button("Загрузить CSV");
         Button saveButton = new Button("Сохранить CSV");
 
@@ -145,14 +148,13 @@ public final class ContactDirectoryApp extends Application {
         deleteButton.setOnAction(event -> deleteContact());
         generateButton.setOnAction(event -> generateContacts());
         benchmarkButton.setOnAction(event -> runBenchmarks());
+        concurrencyButton.setOnAction(event -> runConcurrencyExperiment());
         loadButton.setOnAction(event -> loadContacts());
         saveButton.setOnAction(event -> saveContacts());
 
-        var spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
         dataActions.getChildren().addAll(
-                addButton, editButton, deleteButton, spacer,
-                generateButton, benchmarkButton, loadButton, saveButton
+                addButton, editButton, deleteButton,
+                generateButton, benchmarkButton, concurrencyButton, loadButton, saveButton
         );
         dataActions.setAlignment(Pos.CENTER_LEFT);
         dataActions.setPadding(new Insets(10, 20, 12, 20));
@@ -358,14 +360,20 @@ public final class ContactDirectoryApp extends Application {
         var task = new Task<TrieBenchmarkResult[]>() {
             @Override
             protected TrieBenchmarkResult[] call() {
-                var results = new TrieBenchmarkResult[2];
+                var results = new TrieBenchmarkResult[4];
                 updateMessage("Замер на 10 000 контактов...");
                 updateProgress(0, results.length);
                 results[0] = benchmarkService.run(10_000, this::isCancelled);
                 updateProgress(1, results.length);
-                updateMessage("Замер на 100 000 контактов...");
-                results[1] = benchmarkService.run(100_000, this::isCancelled);
+                updateMessage("TreeMap: 10 000 контактов...");
+                results[1] = new TreeMapBenchmarkService().run(10_000, this::isCancelled);
                 updateProgress(2, results.length);
+                updateMessage("Замер на 100 000 контактов...");
+                results[2] = benchmarkService.run(100_000, this::isCancelled);
+                updateProgress(3, results.length);
+                updateMessage("TreeMap: 100 000 контактов...");
+                results[3] = new TreeMapBenchmarkService().run(100_000, this::isCancelled);
+                updateProgress(4, results.length);
                 return results;
             }
         };
@@ -375,6 +383,61 @@ public final class ContactDirectoryApp extends Application {
             showBenchmarkResults(results);
         });
         configureTaskFailure(task, "Не удалось выполнить замеры");
+        startTask(task, true);
+    }
+
+    private void runConcurrencyExperiment() {
+        var task = new Task<ConcurrencyExperiment.Result[]>() {
+            @Override
+            protected ConcurrencyExperiment.Result[] call() throws Exception {
+                var experiment = new ConcurrencyExperiment();
+                updateMessage("8 писателей: незащищённое дерево...");
+                updateProgress(0, 2);
+                var unsafe = experiment.run(false, 8, 2000, this::isCancelled);
+                updateProgress(1, 2);
+                updateMessage("8 писателей: защищённое дерево...");
+                var safe = experiment.run(true, 8, 2000, this::isCancelled);
+                if (!safe.consistent()) {
+                    throw new IllegalStateException("Защищённая структура не прошла проверку: " + safe);
+                }
+                updateProgress(2, 2);
+                return new ConcurrencyExperiment.Result[]{unsafe, safe};
+            }
+        };
+        task.setOnSucceeded(event -> {
+            var results = task.getValue();
+            finishOperation();
+            var text = new StringBuilder("8 потоков одновременно записывают по 2000 уникальных значений.\n"
+                    + "В обоих случаях используются одинаковые алгоритмы узлов и массивов.\n\n");
+            for (var result : results) {
+                text.append(result.synchronizedAccess() ? "С synchronized" : "Без синхронизации")
+                        .append(":\nОжидалось: ").append(result.expected())
+                        .append("; size: ").append(result.size()).append("; в поддереве: ")
+                        .append(result.subtreeCount()).append("; в обходе: ").append(result.stored())
+                        .append("; не найдено: ").append(result.missing()).append("; ошибок: ")
+                        .append(result.errors()).append("\n").append(result.details()).append("\n\n");
+            }
+            text.append(results[0].consistent()
+                    ? "В этом запуске гонка не проявилась. Повторите эксперимент.\n"
+                    : "Без защиты выявлено повреждение данных или счётчиков.\n");
+            text.append("Успешный запуск сам по себе не доказывает отсутствие гонок.\n"
+                    + "Значение -1 означает, что проверку прервало повреждение структуры.\n"
+                    + "Синхронизация защищает каждую отдельную операцию целиком.\n"
+                    + "Эксперимент использует отдельные деревья; контакты справочника не изменяются.");
+            var area = new TextArea(text.toString());
+            area.setEditable(false);
+            area.setWrapText(true);
+            area.setPrefColumnCount(90);
+            area.setPrefRowCount(20);
+            var alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.initOwner(stage);
+            alert.setTitle("Конкурентная запись");
+            alert.setHeaderText("Незащищённая и защищённая структура");
+            alert.getDialogPane().setContent(area);
+            alert.setResizable(true);
+            alert.showAndWait();
+        });
+        configureTaskFailure(task, "Не удалось выполнить эксперимент");
         startTask(task, true);
     }
 
@@ -551,12 +614,14 @@ public final class ContactDirectoryApp extends Application {
     private void showBenchmarkResults(TrieBenchmarkResult[] results) {
         var text = new StringBuilder();
         text.append(String.format(
-                "%-10s %12s %12s %12s %14s %14s%n",
-                "Контакты", "Вставка", "Поиск", "Удаление", "Автодоп.", "Поддерево"
+                "%-9s %-10s %12s %12s %12s %14s %14s%n",
+                "Хранилище", "Контакты", "Вставка", "Поиск", "Удаление", "Автодоп.", "Поддерево"
         ));
-        for (TrieBenchmarkResult result : results) {
+        for (int index = 0; index < results.length; index++) {
+            TrieBenchmarkResult result = results[index];
             text.append(String.format(
-                    "%,10d %12.3f %12.3f %12.3f %14.3f %14.3f%n",
+                    "%-9s %,10d %12.3f %12.3f %12.3f %14.3f %14.3f%n",
+                    index % 2 == 0 ? "Trie" : "TreeMap",
                     result.contactCount(),
                     result.insertionMicrosPerOperation(),
                     result.searchMicrosPerOperation(),
@@ -570,17 +635,22 @@ public final class ContactDirectoryApp extends Application {
                 .append("Вставка/поиск/удаление: N вызовов; автодополнение/подсчёт: ")
                 .append(results[0].additionalOperationCount()).append(" вызовов.\n")
                 .append("Для автодополнения используются разные двухсимвольные префиксы.\n")
-                .append("Время автодополнения включает сбор найденных контактов.");
+                .append("Время автодополнения включает сбор найденных контактов.\n")
+                .append("Наборы одинаковые, имена уникальны; TreeMap используется только в эксперименте.\n")
+                .append("Trie поддерживает счётчики поддеревьев; TreeMap считает совпадения обходом.\n")
+                .append("Trie измеряется с синхронизацией, TreeMap — без неё.\n")
+                .append("Замеры зависят от JIT, GC и нагрузки; это учебное сравнение.");
 
         var area = new TextArea(text.toString());
         area.setEditable(false);
         area.setStyle("-fx-font-family: monospace;");
-        area.setPrefColumnCount(82);
-        area.setPrefRowCount(10);
+        area.setPrefColumnCount(100);
+        area.setPrefRowCount(16);
         var alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(stage);
         alert.setTitle("Замеры Trie");
         alert.setHeaderText("Среднее время одного вызова, микросекунды (медиана прогонов)");
+        alert.setResizable(true);
         alert.getDialogPane().setContent(area);
         alert.showAndWait();
     }
