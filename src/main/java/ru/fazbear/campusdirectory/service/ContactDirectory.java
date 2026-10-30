@@ -47,6 +47,10 @@ public final class ContactDirectory {
         return contacts.findFirst(name);
     }
 
+    public List<Contact> findByName(String name) {
+        return List.of(contacts.findExact(name));
+    }
+
     public List<Contact> autocomplete(String prefix) {
         return List.of(contacts.autocomplete(prefix));
     }

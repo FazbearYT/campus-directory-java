@@ -63,7 +63,8 @@ public final class TreeMapBenchmarkService {
         started = System.nanoTime();
         for (int index = 0; index < contacts.length; index++) {
             if (index % 100 == 0) { check(cancelled); }
-            if (map.get(key(contacts[index])) != contacts[index]) {
+            Contact[] found = {map.get(key(contacts[index]))};
+            if (found[0] != contacts[index]) {
                 throw new IllegalStateException("TreeMap потерял контакт");
             }
         }

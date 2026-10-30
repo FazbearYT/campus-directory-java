@@ -10,6 +10,26 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class GenericTrieTest {
     @Test
+    void exactSearchReturnsEveryTerminalValueWithoutLongerKeysAndCopiesItsArray() {
+        var trie = new SynchronizedTrie<Book>(Book::title, Book[]::new);
+        var first = new Book("Anna", 1);
+        var second = new Book("ANNA", 2);
+        var longer = new Book("Annabel", 1);
+        trie.add(first);
+        trie.add(second);
+        trie.add(longer);
+        Book[] found = trie.findExact("  anna  ");
+        assertArrayEquals(new Book[]{first, second}, found);
+        assertEquals(Book[].class, found.getClass());
+        found[0] = longer;
+        assertArrayEquals(new Book[]{first, second}, trie.findExact("Anna"));
+        assertEquals(3, trie.autocomplete("Anna").length);
+        assertEquals(0, trie.findExact("Ann").length);
+        assertEquals(0, trie.findExact("Missing").length);
+        assertEquals(Book[].class, trie.findExact("Missing").getClass());
+        assertEquals(3, trie.size());
+    }
+    @Test
     void readerCannotObserveAnInsertionWhileItsMonitorIsHeld() throws Exception {
         var writerInside = new java.util.concurrent.CountDownLatch(1);
         var releaseWriter = new java.util.concurrent.CountDownLatch(1);

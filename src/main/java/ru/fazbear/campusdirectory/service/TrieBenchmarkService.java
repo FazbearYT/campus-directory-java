@@ -59,8 +59,8 @@ public final class TrieBenchmarkService {
         long searchStarted = System.nanoTime();
         for (int index = 0; index < contacts.length; index++) {
             checkCancellation(cancelled, index);
-            Contact found = trie.findFirst(contacts[index].getName());
-            if (found != contacts[index]) {
+            Contact[] found = trie.findExact(contacts[index].getName());
+            if (found.length != 1 || found[0] != contacts[index]) {
                 throw new IllegalStateException("Контакт потерян во время замера поиска");
             }
         }

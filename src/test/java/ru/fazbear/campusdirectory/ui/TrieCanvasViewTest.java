@@ -36,6 +36,30 @@ class TrieCanvasViewTest {
     private static Stage stage;
 
     @Test
+    void exactSearchShowsAllFourNamesakesAndExcludesLongerNames() throws Exception {
+        onFx(() -> {
+            var app = new ContactDirectoryApp();
+            app.start(stage);
+            var directory = (ContactDirectory) field(app, "directory");
+            for (int index = 0; index < 4; index++) {
+                directory.add(new PersonalContact("Анна Волкова", "123" + index, "", ""));
+            }
+            directory.add(new PersonalContact("Анна Волкова-Миронова", "456", "", ""));
+            var input = (TextField) field(app, "prefixField");
+            var table = (TableView<?>) field(app, "table");
+            input.setText("  АННА ВОЛКОВА  ");
+            invoke(app, "autocomplete");
+            assertEquals(5, table.getItems().size());
+            invoke(app, "findContact");
+            assertEquals(4, table.getItems().size());
+            assertEquals(directory.findByName("Анна Волкова"), table.getItems());
+            assertTrue(((javafx.scene.control.Label) field(app, "statusLabel")).getText().endsWith("4"));
+            assertEquals(5, directory.size());
+            return null;
+        });
+    }
+
+    @Test
     void exactSearchReplacesEarlierPrefixResultsAndEnterRunsAutocomplete() throws Exception {
         onFx(() -> {
             var app = new ContactDirectoryApp();

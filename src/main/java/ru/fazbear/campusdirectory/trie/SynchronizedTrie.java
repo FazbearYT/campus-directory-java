@@ -13,6 +13,7 @@ public final class SynchronizedTrie<T> {
     public synchronized void add(T value) { storage.add(value); }
     public synchronized boolean remove(T value) { return storage.remove(value); }
     public synchronized T findFirst(String key) { return storage.findFirst(key); }
+    public synchronized T[] findExact(String key) { return storage.findExact(key); }
     public synchronized T[] autocomplete(String prefix) { return storage.autocomplete(prefix); }
     public synchronized int countByPrefix(String prefix) { return storage.countByPrefix(prefix); }
     public synchronized T[] getAll() { return storage.getAll(); }

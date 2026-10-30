@@ -260,9 +260,9 @@ public final class ContactDirectoryApp extends Application {
                     + ContactValidator.MAXIMUM_NAME_LENGTH + " символов.");
             return;
         }
-        Contact found = directory.findFirstByName(name);
+        List<Contact> found = directory.findByName(name);
         refreshVisualization();
-        if (found == null) {
+        if (found.isEmpty()) {
             table.getItems().clear();
             table.getSelectionModel().clearSelection();
             table.setPlaceholder(new Label("Контакт с таким полным именем не найден"));
@@ -270,8 +270,8 @@ public final class ContactDirectoryApp extends Application {
         } else {
             table.getItems().setAll(found);
             table.sort();
-            selectContact(found);
-            statusLabel.setText("Найден первый контакт с точным именем: " + found.getName());
+            selectContact(found.getFirst());
+            statusLabel.setText("Точное имя «%s»: найдено контактов — %d".formatted(name.strip(), found.size()));
         }
     }
 

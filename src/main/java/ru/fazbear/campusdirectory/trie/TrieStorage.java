@@ -51,6 +51,16 @@ final class TrieStorage<T> {
         return node == null || node.valueCount == 0 ? null : node.values[0];
     }
 
+    public T[] findExact(String name) {
+        Node<T> node = findNode(normalizeKey(name), true);
+        int count = node == null ? 0 : node.valueCount;
+        T[] result = arrayFactory.apply(count);
+        if (count > 0) {
+            System.arraycopy(node.values, 0, result, 0, count);
+        }
+        return result;
+    }
+
     public boolean remove(T value) {
         Objects.requireNonNull(value, "value must not be null");
         String key = normalizeKey(keyExtractor.apply(value));
