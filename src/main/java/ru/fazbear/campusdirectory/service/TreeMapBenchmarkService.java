@@ -19,7 +19,7 @@ public final class TreeMapBenchmarkService {
         if (count < 1) {
             throw new IllegalArgumentException("Размер набора должен быть положительным");
         }
-        Contact[] contacts = new ContactGenerator().generate(count, cancelled, done -> { });
+        Contact[] contacts = new ContactGenerator().generateForBenchmark(count, cancelled);
         var prefixes = new String[PREFIX_OPERATIONS];
         for (int index = 0; index < prefixes.length; index++) {
             String name = contacts[index % contacts.length].getName();

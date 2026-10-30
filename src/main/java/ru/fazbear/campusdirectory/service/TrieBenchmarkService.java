@@ -23,7 +23,7 @@ public final class TrieBenchmarkService {
         }
 
         Objects.requireNonNull(cancelled, "cancelled must not be null");
-        Contact[] contacts = generator.generate(contactCount, cancelled, completed -> { });
+        Contact[] contacts = generator.generateForBenchmark(contactCount, cancelled);
         for (int run = 0; run < WARMUP_RUNS; run++) {
             measure(contacts, cancelled);
         }

@@ -109,7 +109,9 @@ class SynchronizedTrieTest {
         assertEquals(10_000, trie.size());
         assertEquals(10_000, root.subtreeContactCount());
         assertEquals(500, countNodes(root));
-        assertEquals(16, root.children().length);
+        assertEquals(java.util.Arrays.stream(contacts)
+                .map(contact -> contact.getName().toLowerCase(java.util.Locale.ROOT).charAt(0))
+                .distinct().count(), root.children().length);
         assertEquals(0, root.omittedChildCount());
     }
 
