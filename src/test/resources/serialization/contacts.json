@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "contacts": [
+    {"type":"PERSONAL","name":"Анна Ёлкина","phone":"+7 900 100-20-30","email":"anna@example.org","organization":"","position":"","extension":0},
+    {"type":"CORPORATE","name":"Борис Иванов","phone":"+7 383 100-20-30","email":"boris@example.org","organization":"НГТУ \"НЭТИ\"; корпус 1","position":"Инженер","extension":123},
+    {"type":"EMERGENCY","name":"Диспетчерская","phone":"112","email":"","organization":"Университет","position":"","extension":0},
+    {"type":"PERSONAL","name":"Анна Ёлкина","phone":"456","email":"","organization":"","position":"","extension":0}
+  ]
+}

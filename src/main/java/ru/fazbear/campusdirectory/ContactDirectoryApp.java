@@ -1,7 +1,10 @@
 package ru.fazbear.campusdirectory;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -33,6 +36,10 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import ru.fazbear.campusdirectory.io.ContactCsvException;
+import ru.fazbear.campusdirectory.io.BinaryContactSerializer;
+import ru.fazbear.campusdirectory.io.ContactArchive;
+import ru.fazbear.campusdirectory.io.JsonContactSerializer;
+import ru.fazbear.campusdirectory.io.Serializer;
 import ru.fazbear.campusdirectory.io.ContactCsvService;
 import ru.fazbear.campusdirectory.io.CsvLoadResult;
 import ru.fazbear.campusdirectory.io.CsvErrorCode;
@@ -41,6 +48,9 @@ import ru.fazbear.campusdirectory.model.CorporateContact;
 import ru.fazbear.campusdirectory.model.Editable;
 import ru.fazbear.campusdirectory.service.ContactDirectory;
 import ru.fazbear.campusdirectory.service.ContactGenerator;
+import ru.fazbear.campusdirectory.service.ContactFileService;
+import ru.fazbear.campusdirectory.service.SerializationBenchmarkResult;
+import ru.fazbear.campusdirectory.service.SerializationBenchmarkService;
 import ru.fazbear.campusdirectory.service.TrieBenchmarkResult;
 import ru.fazbear.campusdirectory.service.TrieBenchmarkService;
 import ru.fazbear.campusdirectory.service.TreeMapBenchmarkService;
@@ -55,6 +65,8 @@ public final class ContactDirectoryApp extends Application {
 
     private ContactDirectory directory = new ContactDirectory();
     private final ContactCsvService csvService = new ContactCsvService();
+    private final List<Serializer<ContactArchive>> serializers = List.of(
+            new JsonContactSerializer(), new BinaryContactSerializer());
     private final ContactGenerator generator = new ContactGenerator();
     private final TrieBenchmarkService benchmarkService = new TrieBenchmarkService();
     private final TableView<Contact> table = new TableView<>();
@@ -78,7 +90,7 @@ public final class ContactDirectoryApp extends Application {
         var title = new Label("Справочник контактов");
         title.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
         var subtitle = new Label(
-                "Lab 2: собственное префиксное дерево, визуализация обхода и фоновые операции"
+                "Lab 3: сохранение и загрузка JSON и BIN, сравнение форматов"
         );
         subtitle.setStyle("-fx-text-fill: #5f6368;");
         var header = new VBox(4, title, subtitle);
@@ -109,7 +121,7 @@ public final class ContactDirectoryApp extends Application {
         root.setBottom(footer);
 
         refreshAll();
-        stage.setTitle("Campus Directory — лабораторная работа №2");
+        stage.setTitle("Campus Directory — лабораторная работа №3");
         stage.setMinWidth(1120);
         stage.setMinHeight(680);
         stage.setScene(new Scene(root, 1500, 860));
@@ -131,6 +143,9 @@ public final class ContactDirectoryApp extends Application {
         Button concurrencyButton = new Button("Гонка потоков");
         Button loadButton = new Button("Загрузить CSV");
         Button saveButton = new Button("Сохранить CSV");
+        Button importButton = new Button("Импорт JSON / BIN");
+        Button exportButton = new Button("Экспорт JSON / BIN");
+        Button formatsButton = new Button("Сравнить форматы");
 
         addButton.setDefaultButton(true);
         editButton.disableProperty().bind(Bindings.createBooleanBinding(
@@ -150,10 +165,14 @@ public final class ContactDirectoryApp extends Application {
         concurrencyButton.setOnAction(event -> runConcurrencyExperiment());
         loadButton.setOnAction(event -> loadContacts());
         saveButton.setOnAction(event -> saveContacts());
+        importButton.setOnAction(event -> importArchive());
+        exportButton.setOnAction(event -> exportArchive());
+        formatsButton.setOnAction(event -> runSerializationBenchmarks());
 
         dataActions.getChildren().addAll(
                 addButton, editButton, deleteButton,
-                generateButton, benchmarkButton, concurrencyButton, loadButton, saveButton
+                generateButton, benchmarkButton, concurrencyButton, loadButton, saveButton,
+                importButton, exportButton, formatsButton
         );
         dataActions.setAlignment(Pos.CENTER_LEFT);
         dataActions.setPadding(new Insets(10, 20, 12, 20));
@@ -311,7 +330,7 @@ public final class ContactDirectoryApp extends Application {
         confirmation.setTitle("Замена набора контактов");
         confirmation.setHeaderText(header);
         confirmation.setContentText("Текущие контакты (" + directory.size()
-                + ") будут заменены. Сохраните их в CSV, если хотите использовать их позже.");
+                + ") будут заменены. Сохраните их в файл, если хотите использовать их позже.");
         return confirmation.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
@@ -499,7 +518,130 @@ public final class ContactDirectoryApp extends Application {
         startTask(task, false);
     }
 
+    private void importArchive() {
+        FileChooser chooser = archiveChooser("Импорт контактов");
+        File file = chooser.showOpenDialog(stage);
+        if (file == null) {
+            return;
+        }
+        csvDirectory = file.getParentFile();
+        if (confirmReplacement("Импортировать новый набор?")) {
+            startArchiveImport(selectedSerializer(chooser), file.toPath());
+        }
+    }
+
+    private void startArchiveImport(Serializer<ContactArchive> serializer, Path file) {
+        var task = new Task<ContactDirectory>() {
+            @Override
+            protected ContactDirectory call() throws IOException {
+                updateMessage("Импорт " + serializer.format().toUpperCase(Locale.ROOT) + "...");
+                updateProgress(-1, 1);
+                return new ContactFileService().load(serializer, file, this::isCancelled,
+                        completed -> updateMessage("Построение Trie: " + completed));
+            }
+        };
+        task.setOnSucceeded(event -> {
+            directory = task.getValue();
+            finishOperation();
+            prefixField.clear();
+            refreshAll();
+        });
+        configureTaskFailure(task, "Не удалось импортировать контакты");
+        startTask(task, true);
+    }
+
+    private void exportArchive() {
+        FileChooser chooser = archiveChooser("Экспорт контактов");
+        chooser.setInitialFileName("contacts");
+        File file = chooser.showSaveDialog(stage);
+        if (file == null) {
+            return;
+        }
+        csvDirectory = file.getParentFile();
+        startArchiveExport(selectedSerializer(chooser), file.toPath());
+    }
+
+    private void startArchiveExport(Serializer<ContactArchive> serializer, Path file) {
+        List<Contact> snapshot = directory.getAll();
+        var task = new Task<Void>() {
+            @Override
+            protected Void call() throws IOException {
+                updateMessage("Экспорт " + serializer.format().toUpperCase(Locale.ROOT) + "...");
+                updateProgress(-1, 1);
+                serializer.save(ContactArchive.from(snapshot), file);
+                return null;
+            }
+        };
+        task.setOnSucceeded(event -> {
+            finishOperation();
+            showInformation("Файл сохранён", "Сохранено контактов: " + snapshot.size());
+        });
+        configureTaskFailure(task, "Не удалось экспортировать контакты");
+        startTask(task, false);
+    }
+
+    private FileChooser archiveChooser(String title) {
+        FileChooser chooser = fileChooser(title);
+        for (Serializer<ContactArchive> serializer : serializers) {
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(
+                    serializer.format().toUpperCase(Locale.ROOT), "*." + serializer.format()));
+        }
+        chooser.setSelectedExtensionFilter(chooser.getExtensionFilters().getFirst());
+        return chooser;
+    }
+
+    private Serializer<ContactArchive> selectedSerializer(FileChooser chooser) {
+        return serializers.get(chooser.getExtensionFilters().indexOf(chooser.getSelectedExtensionFilter()));
+    }
+
+    private void runSerializationBenchmarks() {
+        var task = new Task<List<SerializationBenchmarkResult>>() {
+            @Override
+            protected List<SerializationBenchmarkResult> call() throws IOException {
+                updateMessage("Сравнение JSON и BIN: 10 000 контактов...");
+                return new SerializationBenchmarkService().run(this::isCancelled,
+                        completed -> updateProgress(completed, 2 * (SerializationBenchmarkService.WARMUP_RUNS
+                                + SerializationBenchmarkService.MEASUREMENT_RUNS)));
+            }
+        };
+        task.setOnSucceeded(event -> {
+            List<SerializationBenchmarkResult> results = task.getValue();
+            finishOperation();
+            var text = new StringBuilder("Формат        Байт       Сохранение, мс     Загрузка, мс\n");
+            for (SerializationBenchmarkResult result : results) {
+                text.append(String.format(Locale.ROOT, "%-8s %10d %20.3f %16.3f%n",
+                        result.format().toUpperCase(Locale.ROOT), result.fileBytes(),
+                        result.saveMillis(), result.loadMillis()));
+            }
+            text.append("\n10 000 одинаковых контактов, 2 прогрева, среднее по 5 прогонам.\n")
+                    .append("Сохранение включает безопасную замену файла; загрузка — чтение архива.\n")
+                    .append("Построение Trie не измеряется. После каждого прогона сверяются все поля.\n")
+                    .append("Файлы временные, рабочий справочник не изменяется.\n")
+                    .append("Замеры зависят от JIT, GC, дискового кэша и нагрузки.");
+            var area = new TextArea(text.toString());
+            area.setEditable(false);
+            area.setStyle("-fx-font-family: monospace;");
+            area.setPrefColumnCount(85);
+            area.setPrefRowCount(14);
+            var alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.initOwner(stage);
+            alert.setTitle("Сравнение форматов");
+            alert.setHeaderText("JSON и BIN: размер файла и время операций");
+            alert.getDialogPane().setContent(area);
+            alert.setResizable(true);
+            alert.showAndWait();
+        });
+        configureTaskFailure(task, "Не удалось сравнить форматы");
+        startTask(task, true);
+    }
+
     private FileChooser csvChooser(String title) {
+        FileChooser chooser = fileChooser(title);
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV-файлы", "*.csv"));
+        return chooser;
+    }
+
+    private FileChooser fileChooser(String title) {
         var chooser = new FileChooser();
         chooser.setTitle(title);
         if (csvDirectory == null || !csvDirectory.isDirectory()) {
@@ -512,7 +654,6 @@ public final class ContactDirectoryApp extends Application {
             }
         }
         chooser.setInitialDirectory(csvDirectory);
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV-файлы", "*.csv"));
         return chooser;
     }
 

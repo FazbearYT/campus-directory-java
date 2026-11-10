@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "ru.fazbear"
-version = "2.0.0-lab2"
+version = "v3.0.0"
 
 repositories {
     mavenCentral()
@@ -17,6 +17,8 @@ javafx {
 }
 
 dependencies {
+    implementation(platform("com.fasterxml.jackson:jackson-bom:2.21.8"))
+    implementation("com.fasterxml.jackson.core:jackson-databind")
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -29,6 +31,7 @@ application {
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release = 21
+    options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
 
 tasks.test {

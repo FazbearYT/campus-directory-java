@@ -19,12 +19,19 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.PersonalContact;
 import ru.fazbear.campusdirectory.ContactDirectoryApp;
 import ru.fazbear.campusdirectory.service.ContactDirectory;
 import ru.fazbear.campusdirectory.service.ContactGenerator;
+import ru.fazbear.campusdirectory.io.BinaryContactSerializer;
+import ru.fazbear.campusdirectory.io.ContactArchive;
+import ru.fazbear.campusdirectory.io.JsonContactSerializer;
+import ru.fazbear.campusdirectory.io.Serializer;
 import ru.fazbear.campusdirectory.trie.SynchronizedTrie;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +43,201 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 @EnabledIfEnvironmentVariable(named = "CAMPUS_GUI_TESTS", matches = "true")
 class TrieCanvasViewTest {
     private static Stage stage;
+
+    @TempDir
+    java.nio.file.Path temporary;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"json", "bin"})
+    void archiveImportRefreshesTableSearchAndVisualization(String format) throws Exception {
+        Serializer<ContactArchive> serializer = format.equals("json")
+                ? new JsonContactSerializer() : new BinaryContactSerializer();
+        var file = temporary.resolve("contacts." + format);
+        try (var input = getClass().getResourceAsStream("/serialization/contacts." + format)) {
+            java.nio.file.Files.copy(input, file);
+        }
+        var app = onFx(() -> {
+            var result = new ContactDirectoryApp();
+            result.start(stage);
+            ((ContactDirectory) field(result, "directory")).add(new PersonalContact("Keep", "123", "", ""));
+            ((TextField) field(result, "prefixField")).setText("Keep");
+            invokeArchiveOperation(result, "startArchiveImport", serializer, file);
+            assertTrue(((javafx.scene.Node) field(result, "dataActions")).isDisabled());
+            return result;
+        });
+        waitForOperation(app);
+        onFx(() -> {
+            assertEquals(4, ((TableView<?>) field(app, "table")).getItems().size());
+            assertEquals("", ((TextField) field(app, "prefixField")).getText());
+            var directory = (ContactDirectory) field(app, "directory");
+            assertEquals(2, directory.findByName("Анна Ёлкина").size());
+            var view = (TrieCanvasView) field(app, "trieView");
+            var root = (ru.fazbear.campusdirectory.trie.TrieNodeSnapshot) field(view, "displayedRoot");
+            assertEquals(4, root.subtreeContactCount());
+            assertFalse(((javafx.scene.Node) field(app, "dataActions")).isDisabled());
+            return null;
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"json", "bin"})
+    void failedArchiveImportKeepsCurrentDirectoryAndTable(String format) throws Exception {
+        Serializer<ContactArchive> serializer = format.equals("json")
+                ? new JsonContactSerializer() : new BinaryContactSerializer();
+        var file = temporary.resolve("invalid." + format);
+        try (var input = getClass().getResourceAsStream("/serialization/invalid-contact." + format)) {
+            java.nio.file.Files.copy(input, file);
+        }
+        var app = onFx(() -> {
+            var result = new ContactDirectoryApp();
+            result.start(stage);
+            ((ContactDirectory) field(result, "directory")).add(new PersonalContact("Keep", "123", "", ""));
+            invoke(result, "refreshAll");
+            invokeArchiveOperation(result, "startArchiveImport", serializer, file);
+            return result;
+        });
+        String message = waitForMessageDialog("Ошибка");
+        assertTrue(message.contains("Телефон"));
+        onFx(() -> {
+            assertEquals("Keep", ((ContactDirectory) field(app, "directory")).getAll().getFirst().getName());
+            assertEquals(1, ((TableView<?>) field(app, "table")).getItems().size());
+            assertNull(field(app, "activeTask"));
+            return null;
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"json", "bin"})
+    void archiveExportSavesEntireDirectoryWhenTableIsFiltered(String format) throws Exception {
+        Serializer<ContactArchive> serializer = format.equals("json")
+                ? new JsonContactSerializer() : new BinaryContactSerializer();
+        var file = temporary.resolve("export." + format);
+        var app = onFx(() -> {
+            var result = new ContactDirectoryApp();
+            result.start(stage);
+            var directory = (ContactDirectory) field(result, "directory");
+            directory.add(new PersonalContact("Анна", "123", "", ""));
+            directory.add(new PersonalContact("Борис", "456", "", ""));
+            ((TextField) field(result, "prefixField")).setText("Анна");
+            invoke(result, "findContact");
+            assertEquals(1, ((TableView<?>) field(result, "table")).getItems().size());
+            invokeArchiveOperation(result, "startArchiveExport", serializer, file);
+            assertFalse(((javafx.scene.Node) field(result, "cancelOperationButton")).isVisible());
+            return result;
+        });
+        assertTrue(waitForMessageDialog("Готово").contains("2"));
+        assertEquals(2, serializer.load(file).contacts().size());
+        assertNull(onFx(() -> field(app, "activeTask")));
+    }
+
+    @Test
+    void formatComparisonRunsInBackgroundAndKeepsWorkingData() throws Exception {
+        var app = onFx(() -> {
+            var result = new ContactDirectoryApp();
+            result.start(stage);
+            ((ContactDirectory) field(result, "directory")).add(new PersonalContact("Keep", "123", "", ""));
+            invoke(result, "runSerializationBenchmarks");
+            assertTrue(field(result, "activeTask") != null);
+            return result;
+        });
+        String text = waitForResultDialog("Сравнение форматов");
+        assertTrue(text.contains("JSON"));
+        assertTrue(text.contains("BIN"));
+        assertTrue(text.contains("среднее по 5"));
+        assertEquals(1, onFx(() -> ((ContactDirectory) field(app, "directory")).size()));
+    }
+
+    private static void invokeArchiveOperation(ContactDirectoryApp app, String name,
+            Serializer<ContactArchive> serializer, java.nio.file.Path file) throws Exception {
+        var method = ContactDirectoryApp.class.getDeclaredMethod(name, Serializer.class, java.nio.file.Path.class);
+        method.setAccessible(true);
+        method.invoke(app, serializer, file);
+    }
+
+    @Test
+    void cancelledArchiveImportDoesNotPublishLateResult() throws Exception {
+        var reading = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var finished = new CountDownLatch(1);
+        var serializer = new Serializer<ContactArchive>() {
+            @Override
+            public String format() { return "json"; }
+
+            @Override
+            public void save(ContactArchive data, java.nio.file.Path file) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public ContactArchive load(java.nio.file.Path file) throws java.io.IOException {
+                reading.countDown();
+                try {
+                    if (!release.await(10, TimeUnit.SECONDS)) {
+                        throw new java.io.IOException("Ожидание отмены истекло");
+                    }
+                    return ContactArchive.from(java.util.List.of(new PersonalContact("Late", "456", "", "")));
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new java.io.IOException(error);
+                } finally {
+                    finished.countDown();
+                }
+            }
+        };
+        var app = onFx(() -> {
+            var result = new ContactDirectoryApp();
+            result.start(stage);
+            ((ContactDirectory) field(result, "directory")).add(new PersonalContact("Keep", "123", "", ""));
+            invokeArchiveOperation(result, "startArchiveImport", serializer, temporary.resolve("cancel.json"));
+            return result;
+        });
+        try {
+            assertTrue(reading.await(10, TimeUnit.SECONDS));
+            onFx(() -> { ((javafx.concurrent.Task<?>) field(app, "activeTask")).cancel(false); return null; });
+        } finally {
+            release.countDown();
+        }
+        assertTrue(finished.await(10, TimeUnit.SECONDS));
+        waitForOperation(app);
+        onFx(() -> {
+            assertEquals("Keep", ((ContactDirectory) field(app, "directory")).getAll().getFirst().getName());
+            assertFalse(((javafx.scene.Node) field(app, "dataActions")).isDisabled());
+            return null;
+        });
+    }
+
+    private static void waitForOperation(ContactDirectoryApp app) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < deadline) {
+            if (onFx(() -> field(app, "activeTask") == null)) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("Фоновая операция не завершилась");
+    }
+
+    private static String waitForMessageDialog(String title) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < deadline) {
+            String text = onFx(() -> {
+                for (var window : java.util.List.copyOf(javafx.stage.Window.getWindows())) {
+                    if (window instanceof Stage dialog && title.equals(dialog.getTitle())
+                            && dialog.getScene().getRoot() instanceof javafx.scene.control.DialogPane pane) {
+                        String message = pane.getContentText();
+                        ((javafx.scene.control.Button) pane.lookupButton(javafx.scene.control.ButtonType.OK)).fire();
+                        return message;
+                    }
+                }
+                return null;
+            });
+            if (text != null) {
+                return text;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("Не появилось окно: " + title);
+    }
 
     @Test
     void contactFormKeepsInvalidInputOpenAndSavesTheReturnedInstanceOnce() throws Exception {
