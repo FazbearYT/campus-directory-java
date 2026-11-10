@@ -1,0 +1,111 @@
+package ru.fazbear.campusdirectory.service;
+
+import java.util.concurrent.CancellationException;
+import java.util.Locale;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.jupiter.api.Test;
+
+import ru.fazbear.campusdirectory.model.ContactValidator;
+import ru.fazbear.campusdirectory.model.Contact;
+import ru.fazbear.campusdirectory.trie.SynchronizedTrie;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class ContactGeneratorTest {
+    private final ContactGenerator generator = new ContactGenerator();
+
+    @Test
+    void generatesNaturalGenderedNamesWithSharedPrefixesAndUnequalBranches() {
+        var contacts = generator.generate(10_000);
+        var trie = new SynchronizedTrie<Contact>(Contact::getName, Contact[]::new);
+        var femaleNames = Set.of("Анна", "Алина", "Алиса", "Мария", "Вера", "Юлия");
+        var maleNames = Set.of("Александр", "Алексей", "Никита", "Илья", "Иван", "Артём");
+        for (var contact : contacts) {
+            String[] name = contact.getName().split(" ");
+            assertEquals(2, name.length);
+            assertTrue(contact.getName().chars().noneMatch(Character::isDigit));
+            if (femaleNames.contains(name[0])) {
+                assertTrue(name[1].endsWith("а"), contact.getName());
+            } else if (maleNames.contains(name[0])) {
+                org.junit.jupiter.api.Assertions.assertFalse(name[1].endsWith("а"), contact.getName());
+            }
+            trie.add(contact);
+        }
+        for (String prefix : new String[]{"алекс", "али", "ан", "ар", "мар", "тим"}) {
+            assertTrue(trie.countByPrefix(prefix) > 0, prefix);
+        }
+        assertTrue(trie.countByPrefix("а") > trie.countByPrefix("м") * 3);
+        assertTrue(Arrays.stream(contacts).map(Contact::getName)
+                .distinct().count() < contacts.length);
+        assertTrue(Arrays.stream(contacts).map(contact -> contact.getName().length())
+                .distinct().count() > 5);
+    }
+
+    @Test
+    void bothGenerationModesAreReproducibleAndBenchmarkKeysStayUnique() {
+        assertArrayEquals(generator.generate(1000), generator.generate(1000));
+        var benchmark = generator.generateForBenchmark(10_000, () -> false);
+        assertArrayEquals(benchmark, generator.generateForBenchmark(10_000, () -> false));
+        assertEquals(10_000, Arrays.stream(benchmark).map(Contact::getName).distinct().count());
+        for (var contact : benchmark) {
+            assertTrue(ContactValidator.validate(contact).isEmpty());
+        }
+    }
+
+    @Test
+    void generationIsIndependentOfDefaultLocale() {
+        Locale previous = Locale.getDefault(Locale.Category.FORMAT);
+        try {
+            Locale.setDefault(Locale.Category.FORMAT, Locale.forLanguageTag("ar-EG"));
+            for (var contact : generator.generate(20)) {
+                assertTrue(ContactValidator.validate(contact).isEmpty(), contact.toString());
+            }
+        } finally {
+            Locale.setDefault(Locale.Category.FORMAT, previous);
+        }
+    }
+
+    @Test
+    void cancellationAtFinalProgressAndForEmptyBatchIsRespected() {
+        var cancelled = new AtomicBoolean();
+        assertThrows(CancellationException.class, () -> generator.generate(1, cancelled::get,
+                done -> cancelled.set(true)));
+        assertThrows(CancellationException.class, () -> generator.generate(0, () -> true, done -> { }));
+    }
+
+    @Test
+    void createsRequestedNumberOfValidContacts() {
+        var progress = new AtomicInteger();
+
+        var contacts = generator.generate(250, () -> false, progress::set);
+
+        assertEquals(250, contacts.length);
+        assertEquals(250, progress.get());
+        for (var contact : contacts) {
+            assertTrue(ContactValidator.validate(contact).isEmpty());
+        }
+    }
+
+    @Test
+    void rejectsNegativeCount() {
+        assertThrows(IllegalArgumentException.class, () -> generator.generate(-1));
+    }
+
+    @Test
+    void supportsCancellation() {
+        var checks = new AtomicInteger();
+
+        assertThrows(CancellationException.class, () -> generator.generate(
+                1_000,
+                () -> checks.incrementAndGet() > 10,
+                completed -> { }
+        ));
+    }
+}

@@ -11,6 +11,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.ContactType;
@@ -32,8 +34,21 @@ public final class ContactCsvService {
     );
 
     public CsvLoadResult load(Path path) throws ContactCsvException {
+        return load(path, () -> false, (completed, total) -> { });
+    }
+
+    public CsvLoadResult load(
+            Path path,
+            BooleanSupplier cancelled,
+            CsvProgressListener progress
+    ) throws ContactCsvException {
+        if (cancelled.getAsBoolean()) {
+            throw new CancellationException("Загрузка CSV отменена");
+        }
         var contacts = new ArrayList<Contact>();
         var errors = new ArrayList<CsvRowError>();
+        long totalRows = countDataRows(path, cancelled);
+        progress.update(0, totalRows);
 
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             String headerLine = reader.readLine();
@@ -41,9 +56,15 @@ public final class ContactCsvService {
 
             String line;
             int lineNumber = 1;
+            long completedRows = 0;
             while ((line = reader.readLine()) != null) {
+                if (cancelled.getAsBoolean()) {
+                    throw new CancellationException("Загрузка CSV отменена");
+                }
                 lineNumber++;
+                completedRows++;
                 if (line.isBlank()) {
+                    progress.update(completedRows, totalRows);
                     continue;
                 }
 
@@ -52,6 +73,7 @@ public final class ContactCsvService {
                 } catch (ContactCsvException error) {
                     errors.add(new CsvRowError(lineNumber, error.getCode(), error.getMessage()));
                 }
+                progress.update(completedRows, totalRows);
             }
         } catch (IOException error) {
             throw new ContactCsvException(
@@ -61,7 +83,32 @@ public final class ContactCsvService {
             );
         }
 
+        if (cancelled.getAsBoolean()) {
+            throw new CancellationException("Загрузка CSV отменена");
+        }
         return new CsvLoadResult(contacts, errors);
+    }
+
+    private long countDataRows(Path path, BooleanSupplier cancelled) throws ContactCsvException {
+        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            if (reader.readLine() == null) {
+                return 0;
+            }
+            long count = 0;
+            while (reader.readLine() != null) {
+                if (cancelled.getAsBoolean()) {
+                    throw new CancellationException("Загрузка CSV отменена");
+                }
+                count++;
+            }
+            return count;
+        } catch (IOException error) {
+            throw new ContactCsvException(
+                    CsvErrorCode.IO_ERROR,
+                    "Не удалось прочитать файл: " + path,
+                    error
+            );
+        }
     }
 
     public void save(Path path, List<Contact> contacts) throws ContactCsvException {
@@ -169,9 +216,16 @@ public final class ContactCsvService {
         var fields = new ArrayList<String>();
         var current = new StringBuilder();
         boolean quoted = false;
+        boolean closedQuote = false;
 
         for (int index = 0; index < line.length(); index++) {
             char symbol = line.charAt(index);
+            if (closedQuote && symbol != DELIMITER) {
+                throw new ContactCsvException(
+                        CsvErrorCode.MALFORMED_QUOTES,
+                        "После закрывающей кавычки ожидается разделитель или конец строки"
+                );
+            }
             if (symbol == '"') {
                 if (quoted && index + 1 < line.length() && line.charAt(index + 1) == '"') {
                     current.append('"');
@@ -183,10 +237,12 @@ public final class ContactCsvService {
                     );
                 } else {
                     quoted = !quoted;
+                    closedQuote = !quoted;
                 }
             } else if (symbol == DELIMITER && !quoted) {
                 fields.add(current.toString());
                 current.setLength(0);
+                closedQuote = false;
             } else {
                 current.append(symbol);
             }
@@ -247,7 +303,7 @@ public final class ContactCsvService {
             fields.add("");
             fields.add("");
         }
-        return fields.stream().map(this::escape).reduce((left, right) -> left + DELIMITER + right).orElse("");
+        return String.join(Character.toString(DELIMITER), fields.stream().map(this::escape).toList());
     }
 
     private String escape(String value) {

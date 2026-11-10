@@ -1,6 +1,7 @@
 package ru.fazbear.campusdirectory.service;
 
 import java.util.List;
+import java.util.concurrent.CancellationException;
 
 import org.junit.jupiter.api.Test;
 
@@ -8,9 +9,43 @@ import ru.fazbear.campusdirectory.model.EmergencyContact;
 import ru.fazbear.campusdirectory.model.PersonalContact;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ContactDirectoryTest {
+    @Test
+    void invalidLaterImportedContactDoesNotPartiallyReplaceDirectory() {
+        var directory = new ContactDirectory();
+        var original = new PersonalContact("Original", "123", "", "");
+        directory.add(original);
+        assertThrows(ContactValidationException.class, () -> directory.replaceAll(List.of(
+                new PersonalContact("Valid", "456", "", ""),
+                new PersonalContact("Invalid", "---", "", ""))));
+        assertEquals(List.of(original), directory.getAll());
+        assertEquals(0, directory.countByPrefix("Valid"));
+    }
+    @Test
+    void keepsPreviousDataWhenCancelledByFinalProgressCallback() {
+        var directory = new ContactDirectory();
+        var original = new PersonalContact("Anna", "123", "", "");
+        directory.add(original);
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        assertThrows(CancellationException.class, () -> directory.replaceAll(
+                List.of(new PersonalContact("Boris", "123", "", "")),
+                cancelled::get, completed -> cancelled.set(true)));
+        assertEquals(List.of(original), directory.getAll());
+    }
+
+    @Test
+    void invalidUpdateKeepsOriginalContact() {
+        var directory = new ContactDirectory();
+        var original = new PersonalContact("Anna", "123", "", "");
+        directory.add(original);
+        assertThrows(ContactValidationException.class, () -> directory.update(original,
+                new PersonalContact("a".repeat(6000), "123", "", "")));
+        assertEquals(List.of(original), directory.getAll());
+    }
+
     @Test
     void addsEditableContact() {
         var directory = new ContactDirectory();
@@ -56,5 +91,38 @@ class ContactDirectoryTest {
         var invalid = new PersonalContact("", "", "", "");
 
         assertThrows(ContactValidationException.class, () -> directory.replaceAll(List.of(invalid)));
+    }
+
+    @Test
+    void supportsTrieSearchAutocompleteAndRemoval() {
+        var directory = new ContactDirectory();
+        var anna = new PersonalContact("Анна", "112", "", "");
+        var anya = new PersonalContact("Аня", "113", "", "");
+        directory.add(anya);
+        directory.add(anna);
+
+        assertEquals(anna, directory.findFirstByName("АННА"));
+        assertEquals(List.of(anna, anya), directory.autocomplete("ан"));
+        assertEquals(2, directory.countByPrefix("ан"));
+
+        directory.remove(anna);
+
+        assertNull(directory.findFirstByName("анна"));
+        assertEquals(1, directory.size());
+    }
+
+    @Test
+    void keepsPreviousDataWhenReplacementIsCancelled() {
+        var directory = new ContactDirectory();
+        var original = new PersonalContact("Анна", "112", "", "");
+        directory.add(original);
+
+        assertThrows(CancellationException.class, () -> directory.replaceAll(
+                List.of(new PersonalContact("Борис", "113", "", "")),
+                () -> true,
+                completed -> { }
+        ));
+
+        assertEquals(List.of(original), directory.getAll());
     }
 }

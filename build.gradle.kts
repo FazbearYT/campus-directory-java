@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "ru.fazbear"
-version = "1.0.0-lab1"
+version = "2.0.0-lab2"
 
 repositories {
     mavenCentral()

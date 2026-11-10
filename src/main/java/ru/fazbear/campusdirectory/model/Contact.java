@@ -9,10 +9,10 @@ public abstract class Contact {
     private final String organization;
 
     protected Contact(String name, String phone, String email, String organization) {
-        this.name = normalize(name, "name");
-        this.phone = normalize(phone, "phone");
-        this.email = normalize(email, "email");
-        this.organization = normalize(organization, "organization");
+        this.name = name.strip();
+        this.phone = phone.strip();
+        this.email = email.strip();
+        this.organization = organization.strip();
     }
 
     public abstract ContactType getType();
@@ -31,10 +31,6 @@ public abstract class Contact {
 
     public String getOrganization() {
         return organization;
-    }
-
-    private static String normalize(String value, String fieldName) {
-        return Objects.requireNonNull(value, fieldName + " must not be null").strip();
     }
 
     @Override

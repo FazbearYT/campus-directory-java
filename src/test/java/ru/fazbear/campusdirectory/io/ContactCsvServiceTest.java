@@ -3,6 +3,8 @@ package ru.fazbear.campusdirectory.io;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,6 +23,85 @@ class ContactCsvServiceTest {
 
     @TempDir
     Path temporaryDirectory;
+
+    @Test
+    void reportsMissingFileAndInvalidUtf8AsIoErrors() throws Exception {
+        Path missing = temporaryDirectory.resolve("missing.csv");
+        assertEquals(CsvErrorCode.IO_ERROR,
+                assertThrows(ContactCsvException.class, () -> service.load(missing)).getCode());
+        Path malformed = temporaryDirectory.resolve("invalid-utf8.csv");
+        Files.write(malformed, new byte[]{(byte) 0xc3, 0x28});
+        assertEquals(CsvErrorCode.IO_ERROR,
+                assertThrows(ContactCsvException.class, () -> service.load(malformed)).getCode());
+    }
+
+    @Test
+    void failedReplacementKeepsTargetAndRemovesTemporaryFile() throws Exception {
+        Path target = Files.createDirectory(temporaryDirectory.resolve("contacts.csv"));
+        Path original = target.resolve("keep.txt");
+        Files.writeString(original, "original");
+        assertEquals(CsvErrorCode.IO_ERROR, assertThrows(ContactCsvException.class,
+                () -> service.save(target, List.of(new PersonalContact("Anna", "123", "", ""))))
+                .getCode());
+        assertEquals("original", Files.readString(original));
+        try (var files = Files.list(temporaryDirectory)) {
+            assertEquals(List.of(target), files.toList());
+        }
+    }
+
+    @Test
+    void roundTripsRandomFieldsWithDelimitersQuotesAndUnicode() throws Exception {
+        var random = new java.util.Random(20261023L);
+        var contacts = new java.util.ArrayList<Contact>();
+        String alphabet = "abcXYZ ;\"Ёя\u0130";
+        for (int index = 0; index < 1200; index++) {
+            var text = new StringBuilder("Contact " + index + " ");
+            for (int symbol = 0; symbol < 30; symbol++) {
+                text.append(alphabet.charAt(random.nextInt(alphabet.length())));
+            }
+            contacts.add(new PersonalContact(text.toString(), "+7 (123) 456-78-90",
+                    "c" + index + "@example.com", text.reverse().toString()));
+        }
+        Path file = temporaryDirectory.resolve("random.csv");
+        service.save(file, contacts);
+        CsvLoadResult result = service.load(file);
+        assertEquals(contacts, result.contacts());
+        assertTrue(result.errors().isEmpty());
+    }
+
+    @Test
+    void cancelsHeaderOnlyFileAndFinalProgressCallback() throws Exception {
+        Path empty = write("type;name;phone;email;organization;position;extension\n");
+        assertThrows(CancellationException.class, () -> service.load(empty, () -> true, (a, b) -> { }));
+        Path file = write("type;name;phone;email;organization;position;extension\nPERSONAL;Anna;123;;;;\n");
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        assertThrows(CancellationException.class, () -> service.load(file, cancelled::get,
+                (done, total) -> { if (done == total) cancelled.set(true); }));
+    }
+
+    @Test
+    void rejectsTextAfterClosingQuoteAndPreservesValidRows() throws Exception {
+        Path file = write("""
+                type;name;phone;email;organization;position;extension
+                PERSONAL;"Anna"garbage;123;;;;
+                PERSONAL;""garbage;123;;;;
+                PERSONAL;"Anna" ;123;;;;
+                PERSONAL;"Anna";123;;;;
+                """);
+        CsvLoadResult result = service.load(file);
+        assertEquals(1, result.contacts().size());
+        assertEquals(List.of(CsvErrorCode.MALFORMED_QUOTES, CsvErrorCode.MALFORMED_QUOTES,
+                CsvErrorCode.MALFORMED_QUOTES), result.errors().stream().map(CsvRowError::code).toList());
+    }
+
+    @Test
+    void invalidPhoneCannotOverwriteExistingFile() throws Exception {
+        Path file = write("existing data");
+        assertThrows(ContactCsvException.class, () -> service.save(file,
+                List.of(new PersonalContact("Anna", "+7\n123", "", ""))));
+        assertEquals("existing data", Files.readString(file));
+    }
+
 
     @Test
     void loadsAllSupportedContactTypes() throws Exception {
@@ -100,6 +181,41 @@ class ContactCsvServiceTest {
 
         assertEquals(1, result.contacts().size());
         assertEquals(CsvErrorCode.MALFORMED_QUOTES, result.errors().getFirst().code());
+    }
+
+    @Test
+    void reportsLoadProgress() throws Exception {
+        Path file = write("""
+                type;name;phone;email;organization;position;extension
+                PERSONAL;Анна;112;;;;
+                PERSONAL;Борис;113;;;;
+                """);
+        var completed = new AtomicLong();
+        var total = new AtomicLong();
+
+        CsvLoadResult result = service.load(file, () -> false, (done, maximum) -> {
+            completed.set(done);
+            total.set(maximum);
+        });
+
+        assertEquals(2, result.contacts().size());
+        assertEquals(2, completed.get());
+        assertEquals(2, total.get());
+    }
+
+    @Test
+    void supportsLoadCancellation() throws Exception {
+        Path file = write("""
+                type;name;phone;email;organization;position;extension
+                PERSONAL;Анна;112;;;;
+                PERSONAL;Борис;113;;;;
+                """);
+
+        assertThrows(CancellationException.class, () -> service.load(
+                file,
+                () -> true,
+                (completed, total) -> { }
+        ));
     }
 
     private Path write(String content) throws Exception {

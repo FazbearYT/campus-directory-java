@@ -1,17 +1,21 @@
 package ru.fazbear.campusdirectory.service;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
+import java.util.function.IntConsumer;
 
 import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.ContactValidator;
 import ru.fazbear.campusdirectory.model.Editable;
+import ru.fazbear.campusdirectory.trie.SynchronizedTrie;
+import ru.fazbear.campusdirectory.trie.TrieNodeSnapshot;
 
 public final class ContactDirectory {
-    private final List<Contact> contacts = new ArrayList<>();
+    private SynchronizedTrie<Contact> contacts = new SynchronizedTrie<Contact>(Contact::getName, Contact[]::new);
 
     public List<Contact> getAll() {
-        return List.copyOf(contacts);
+        return List.of(contacts.getAll());
     }
 
     public void add(Contact contact) {
@@ -21,19 +25,77 @@ public final class ContactDirectory {
     }
 
     public void update(int index, Contact replacement) {
-        Contact current = contacts.get(index);
+        update(getAll().get(index), replacement);
+    }
+
+    public void update(Contact current, Contact replacement) {
         requireEditable(current);
         requireEditable(replacement);
         requireValid(replacement);
-        contacts.set(index, replacement);
+        if (!contacts.remove(current)) {
+            throw new IllegalStateException("Изменяемый контакт не найден");
+        }
+        contacts.add(replacement);
+    }
+
+    public boolean remove(Contact contact) {
+        requireEditable(contact);
+        return contacts.remove(contact);
+    }
+
+    public Contact findFirstByName(String name) {
+        return contacts.findFirst(name);
+    }
+
+    public List<Contact> findByName(String name) {
+        return List.of(contacts.findExact(name));
+    }
+
+    public List<Contact> autocomplete(String prefix) {
+        return List.of(contacts.autocomplete(prefix));
+    }
+
+    public int countByPrefix(String prefix) {
+        return contacts.countByPrefix(prefix);
+    }
+
+    public TrieNodeSnapshot getTrieSnapshot() {
+        return contacts.snapshot();
+    }
+
+    public TrieNodeSnapshot getTrieSnapshot(int maximumNodes) {
+        return contacts.snapshot(maximumNodes);
+    }
+
+    public TrieNodeSnapshot getTrieSnapshot(int maximumNodes, int maximumDepth) {
+        return contacts.snapshot(maximumNodes, maximumDepth);
     }
 
     public void replaceAll(List<Contact> loadedContacts) {
-        for (Contact contact : loadedContacts) {
+        replaceAll(loadedContacts, () -> false, completed -> { });
+    }
+
+    public void replaceAll(
+            List<Contact> loadedContacts,
+            BooleanSupplier cancelled,
+            IntConsumer progress
+    ) {
+        var replacement = new SynchronizedTrie<Contact>(Contact::getName, Contact[]::new);
+        for (int index = 0; index < loadedContacts.size(); index++) {
+            if (cancelled.getAsBoolean()) {
+                throw new CancellationException("Построение Trie отменено");
+            }
+            Contact contact = loadedContacts.get(index);
             requireValid(contact);
+            replacement.add(contact);
+            if ((index + 1) % 100 == 0 || index + 1 == loadedContacts.size()) {
+                progress.accept(index + 1);
+            }
         }
-        contacts.clear();
-        contacts.addAll(loadedContacts);
+        if (cancelled.getAsBoolean()) {
+            throw new CancellationException("Построение Trie отменено");
+        }
+        contacts = replacement;
     }
 
     public int size() {

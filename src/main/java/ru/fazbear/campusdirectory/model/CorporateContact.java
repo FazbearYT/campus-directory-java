@@ -16,7 +16,7 @@ public final class CorporateContact extends Contact implements Editable {
             int extension
     ) {
         super(name, phone, email, organization);
-        this.position = Objects.requireNonNull(position, "position must not be null").strip();
+        this.position = position.strip();
         this.extension = extension;
     }
 
