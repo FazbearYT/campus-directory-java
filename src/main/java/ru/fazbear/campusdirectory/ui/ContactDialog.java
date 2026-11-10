@@ -1,7 +1,7 @@
 package ru.fazbear.campusdirectory.ui;
 
-import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -24,8 +24,8 @@ import javafx.stage.Window;
 import ru.fazbear.campusdirectory.model.Contact;
 import ru.fazbear.campusdirectory.model.ContactType;
 import ru.fazbear.campusdirectory.model.CorporateContact;
-import ru.fazbear.campusdirectory.model.Editable;
 import ru.fazbear.campusdirectory.model.PersonalContact;
+import ru.fazbear.campusdirectory.service.ContactValidationException;
 
 public final class ContactDialog {
     private final Dialog<Contact> dialog = new Dialog<>();
@@ -41,8 +41,9 @@ public final class ContactDialog {
     private final Label errorLabel = new Label();
     private final ButtonType saveButton = new ButtonType("Сохранить", ButtonBar.ButtonData.OK_DONE);
     private final ButtonType cancelButton = new ButtonType("Отмена", ButtonBar.ButtonData.CANCEL_CLOSE);
+    private Contact savedContact;
 
-    private ContactDialog(Window owner, Contact contact) {
+    private ContactDialog(Window owner, Contact contact, Consumer<Contact> saveContact) {
         dialog.initOwner(owner);
         dialog.setTitle(contact == null ? "Добавление контакта" : "Изменение контакта");
         dialog.setHeaderText(contact == null ? "Новый редактируемый контакт" : contact.getName());
@@ -60,9 +61,6 @@ public final class ContactDialog {
         extensionField.setPromptText("Целое число от 1 до 999999");
 
         if (contact != null) {
-            if (!(contact instanceof Editable)) {
-                throw new IllegalArgumentException("Контакт доступен только для чтения");
-            }
             fillFrom(contact);
             typeBox.setDisable(true);
         }
@@ -82,22 +80,28 @@ public final class ContactDialog {
 
         Node saveNode = dialog.getDialogPane().lookupButton(saveButton);
         saveNode.addEventFilter(ActionEvent.ACTION, event -> {
-            List<String> errors = validateForm();
-            if (!errors.isEmpty()) {
-                errorLabel.setText(String.join(System.lineSeparator(), errors));
+            try {
+                Contact candidate = createContact();
+                saveContact.accept(candidate);
+                savedContact = candidate;
+            } catch (ContactValidationException error) {
+                errorLabel.setText(String.join(System.lineSeparator(), error.getErrors()));
+                event.consume();
+            } catch (IllegalArgumentException error) {
+                errorLabel.setText(error.getMessage());
                 event.consume();
             }
         });
 
-        dialog.setResultConverter(button -> button == saveButton ? createContact() : null);
+        dialog.setResultConverter(button -> button == saveButton ? savedContact : null);
     }
 
-    public static Optional<Contact> showCreate(Window owner) {
-        return new ContactDialog(owner, null).dialog.showAndWait();
+    public static Optional<Contact> showCreate(Window owner, Consumer<Contact> saveContact) {
+        return new ContactDialog(owner, null, saveContact).dialog.showAndWait();
     }
 
-    public static Optional<Contact> showEdit(Window owner, Contact contact) {
-        return new ContactDialog(owner, contact).dialog.showAndWait();
+    public static Optional<Contact> showEdit(Window owner, Contact contact, Consumer<Contact> saveContact) {
+        return new ContactDialog(owner, contact, saveContact).dialog.showAndWait();
     }
 
     private GridPane createGrid() {
@@ -157,15 +161,6 @@ public final class ContactDialog {
                 scene.getWindow().sizeToScene();
             }
         });
-    }
-
-    private List<String> validateForm() {
-        try {
-            Contact contact = createContact();
-            return ((Editable) contact).validate();
-        } catch (IllegalArgumentException error) {
-            return List.of(error.getMessage());
-        }
     }
 
     private Contact createContact() {

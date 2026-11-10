@@ -78,15 +78,13 @@ public final class TrieCanvasView extends VBox {
     }
 
     private void focusRoot() {
-        if (displayedRoot != null) {
-            double viewportWidth = scrollPane.getViewportBounds().getWidth();
-            double availableScroll = drawingWidth - viewportWidth;
-            double rootX = displayedPositions.get(displayedRoot).getX();
-            scrollPane.setHvalue(availableScroll <= 0 ? 0
-                    : Math.max(0, Math.min(1, (rootX - viewportWidth / 2) / availableScroll)));
-            scrollPane.setVvalue(0);
-            drawViewport();
-        }
+        double viewportWidth = scrollPane.getViewportBounds().getWidth();
+        double availableScroll = drawingWidth - viewportWidth;
+        double rootX = displayedPositions.get(displayedRoot).getX();
+        scrollPane.setHvalue(availableScroll <= 0 ? 0
+                : Math.max(0, Math.min(1, (rootX - viewportWidth / 2) / availableScroll)));
+        scrollPane.setVvalue(0);
+        drawViewport();
     }
 
     private int countLeaves(TrieNodeSnapshot node, Map<TrieNodeSnapshot, Integer> leafCounts) {

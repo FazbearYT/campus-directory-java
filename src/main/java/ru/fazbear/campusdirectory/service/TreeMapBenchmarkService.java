@@ -110,7 +110,7 @@ public final class TreeMapBenchmarkService {
     }
 
     private String key(Contact contact) {
-        return contact.getName().strip().toLowerCase(Locale.ROOT);
+        return contact.getName().toLowerCase(Locale.ROOT);
     }
 
     private void check(BooleanSupplier cancelled) {

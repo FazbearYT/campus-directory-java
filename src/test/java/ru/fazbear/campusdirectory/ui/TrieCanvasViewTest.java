@@ -29,11 +29,84 @@ import ru.fazbear.campusdirectory.trie.SynchronizedTrie;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 @EnabledIfEnvironmentVariable(named = "CAMPUS_GUI_TESTS", matches = "true")
 class TrieCanvasViewTest {
     private static Stage stage;
+
+    @Test
+    void contactFormKeepsInvalidInputOpenAndSavesTheReturnedInstanceOnce() throws Exception {
+        onFx(() -> {
+            var directory = new ContactDirectory();
+            var attempts = new java.util.concurrent.atomic.AtomicInteger();
+            var form = contactForm(null, contact -> {
+                attempts.incrementAndGet();
+                directory.add(contact);
+            });
+            var dialog = (javafx.scene.control.Dialog<?>) field(form, "dialog");
+            var saveType = (javafx.scene.control.ButtonType) field(form, "saveButton");
+            var save = (javafx.scene.control.Button) dialog.getDialogPane().lookupButton(saveType);
+            dialog.show();
+            try {
+                ((TextField) field(form, "phoneField")).setText("123");
+                save.fire();
+                assertTrue(dialog.isShowing());
+                assertEquals(0, directory.size());
+                assertEquals("Имя обязательно", ((javafx.scene.control.Label) field(form, "errorLabel")).getText());
+
+                ((TextField) field(form, "nameField")).setText("  Анна  ");
+                save.fire();
+                assertFalse(dialog.isShowing());
+                assertEquals(2, attempts.get());
+                assertEquals(1, directory.size());
+                assertSame(dialog.getResult(), directory.getAll().getFirst());
+                assertEquals("Анна", directory.getAll().getFirst().getName());
+            } finally {
+                dialog.close();
+            }
+            return null;
+        });
+    }
+
+    @Test
+    void editingFormPreservesOriginalOnErrorAndCancel() throws Exception {
+        onFx(() -> {
+            var directory = new ContactDirectory();
+            var original = new PersonalContact("Анна", "123", "", "");
+            directory.add(original);
+            var form = contactForm(original, replacement -> directory.update(original, replacement));
+            var dialog = (javafx.scene.control.Dialog<?>) field(form, "dialog");
+            dialog.show();
+            try {
+                ((TextField) field(form, "phoneField")).setText("---");
+                var saveType = (javafx.scene.control.ButtonType) field(form, "saveButton");
+                ((javafx.scene.control.Button) dialog.getDialogPane().lookupButton(saveType)).fire();
+                assertTrue(dialog.isShowing());
+                assertSame(original, directory.getAll().getFirst());
+
+                ((TextField) field(form, "phoneField")).setText("456");
+                var cancelType = (javafx.scene.control.ButtonType) field(form, "cancelButton");
+                ((javafx.scene.control.Button) dialog.getDialogPane().lookupButton(cancelType)).fire();
+                assertFalse(dialog.isShowing());
+                assertSame(original, directory.getAll().getFirst());
+                assertNull(dialog.getResult());
+            } finally {
+                dialog.close();
+            }
+            return null;
+        });
+    }
+
+    private static ContactDialog contactForm(Contact contact, java.util.function.Consumer<Contact> saveContact)
+            throws Exception {
+        var constructor = ContactDialog.class.getDeclaredConstructor(
+                javafx.stage.Window.class, Contact.class, java.util.function.Consumer.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(stage, contact, saveContact);
+    }
 
     @Test
     void exactSearchShowsAllFourNamesakesAndExcludesLongerNames() throws Exception {
@@ -270,8 +343,8 @@ class TrieCanvasViewTest {
         table.sort();
     }
 
-    private static Object field(ContactDirectoryApp app, String name) throws Exception {
-        var field = ContactDirectoryApp.class.getDeclaredField(name);
+    private static Object field(Object app, String name) throws Exception {
+        var field = app.getClass().getDeclaredField(name);
         field.setAccessible(true);
         return field.get(app);
     }

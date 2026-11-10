@@ -17,7 +17,7 @@ public final class ContactValidator {
     public static List<String> validate(Contact contact) {
         var errors = new ArrayList<String>();
 
-        if (contact.getName().isBlank()) {
+        if (contact.getName().isEmpty()) {
             errors.add("Имя обязательно");
         } else if (containsLineBreak(contact.getName())) {
             errors.add("Имя должно занимать одну строку");
@@ -25,7 +25,7 @@ public final class ContactValidator {
             errors.add("Имя не должно превышать " + MAXIMUM_NAME_LENGTH + " символов");
         }
 
-        if (contact.getPhone().isBlank()) {
+        if (contact.getPhone().isEmpty()) {
             errors.add("Телефон обязателен");
         } else if (!PHONE_PATTERN.matcher(contact.getPhone()).matches()
                 || contact.getPhone().chars().filter(symbol -> symbol >= '0' && symbol <= '9').count() < 3
@@ -33,7 +33,7 @@ public final class ContactValidator {
             errors.add("Телефон: от 3 до 25 символов, минимум 3 цифры; + допустим только в начале");
         }
 
-        if (!contact.getEmail().isBlank() && (!EMAIL_PATTERN.matcher(contact.getEmail()).matches()
+        if (!contact.getEmail().isEmpty() && (!EMAIL_PATTERN.matcher(contact.getEmail()).matches()
                 || contact.getEmail().startsWith(".") || contact.getEmail().contains("..")
                 || contact.getEmail().contains(".@"))) {
             errors.add("E-mail имеет неверный формат");
@@ -44,10 +44,10 @@ public final class ContactValidator {
         }
 
         if (contact instanceof CorporateContact corporate) {
-            if (corporate.getOrganization().isBlank()) {
+            if (corporate.getOrganization().isEmpty()) {
                 errors.add("Для корпоративного контакта нужна организация");
             }
-            if (corporate.getPosition().isBlank()) {
+            if (corporate.getPosition().isEmpty()) {
                 errors.add("Для корпоративного контакта нужна должность");
             }
             if (containsLineBreak(corporate.getPosition())) {
@@ -58,7 +58,7 @@ public final class ContactValidator {
             }
         }
 
-        if (contact instanceof EmergencyContact && contact.getOrganization().isBlank()) {
+        if (contact instanceof EmergencyContact && contact.getOrganization().isEmpty()) {
             errors.add("Для аварийного контакта нужна организация");
         }
 

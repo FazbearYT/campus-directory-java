@@ -1,7 +1,6 @@
 package ru.fazbear.campusdirectory.service;
 
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
@@ -22,7 +21,6 @@ public final class TrieBenchmarkService {
             throw new IllegalArgumentException("Размер набора должен быть положительным");
         }
 
-        Objects.requireNonNull(cancelled, "cancelled must not be null");
         Contact[] contacts = generator.generateForBenchmark(contactCount, cancelled);
         for (int run = 0; run < WARMUP_RUNS; run++) {
             measure(contacts, cancelled);

@@ -303,7 +303,7 @@ public final class ContactCsvService {
             fields.add("");
             fields.add("");
         }
-        return fields.stream().map(this::escape).reduce((left, right) -> left + DELIMITER + right).orElse("");
+        return String.join(Character.toString(DELIMITER), fields.stream().map(this::escape).toList());
     }
 
     private String escape(String value) {

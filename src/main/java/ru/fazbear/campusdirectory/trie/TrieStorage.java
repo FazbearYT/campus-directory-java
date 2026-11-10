@@ -47,12 +47,12 @@ final class TrieStorage<T> {
     }
 
     public T findFirst(String name) {
-        Node<T> node = findNode(normalizeKey(name), true);
+        Node<T> node = findNode(normalizeKey(name));
         return node == null || node.valueCount == 0 ? null : node.values[0];
     }
 
     public T[] findExact(String name) {
-        Node<T> node = findNode(normalizeKey(name), true);
+        Node<T> node = findNode(normalizeKey(name));
         int count = node == null ? 0 : node.valueCount;
         T[] result = arrayFactory.apply(count);
         if (count > 0) {
@@ -99,7 +99,7 @@ final class TrieStorage<T> {
 
     public T[] autocomplete(String prefix) {
         String key = normalizePrefix(prefix);
-        Node<T> node = findNode(key, true);
+        Node<T> node = findNode(key);
         if (node == null) {
             return arrayFactory.apply(0);
         }
@@ -110,7 +110,7 @@ final class TrieStorage<T> {
     }
 
     public int countByPrefix(String prefix) {
-        Node<T> node = findNode(normalizePrefix(prefix), true);
+        Node<T> node = findNode(normalizePrefix(prefix));
         return node == null ? 0 : node.subtreeValueCount;
     }
 
@@ -142,20 +142,16 @@ final class TrieStorage<T> {
         return size;
     }
 
-    private Node<T> findNode(String key, boolean recordVisit) {
+    private Node<T> findNode(String key) {
         Node<T> current = root;
-        if (recordVisit) {
-            beginVisit();
-        }
+        beginVisit();
 
         for (int index = 0; index < key.length(); index++) {
             current = current.findChild(key.charAt(index));
             if (current == null) {
                 return null;
             }
-            if (recordVisit) {
-                current.lastVisitId = visitId;
-            }
+            current.lastVisitId = visitId;
         }
 
         return current;
@@ -220,20 +216,19 @@ final class TrieStorage<T> {
     }
 
     private static String normalizeKey(String value) {
-        if (Objects.requireNonNull(value, "name must not be null").strip().length()
-                > MAXIMUM_KEY_LENGTH) {
+        String key = value.strip();
+        if (key.length() > MAXIMUM_KEY_LENGTH) {
             throw new IllegalArgumentException("Имя не должно превышать "
                     + MAXIMUM_KEY_LENGTH + " символов");
         }
-        String key = normalizePrefix(value);
         if (key.isEmpty()) {
             throw new IllegalArgumentException("Имя контакта не может быть пустым");
         }
-        return key;
+        return key.toLowerCase(Locale.ROOT);
     }
 
     private static String normalizePrefix(String value) {
-        return Objects.requireNonNull(value, "name must not be null").strip().toLowerCase(Locale.ROOT);
+        return value.strip().toLowerCase(Locale.ROOT);
     }
 
     private static final class Node<T> {

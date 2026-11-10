@@ -2,7 +2,6 @@ package ru.fazbear.campusdirectory;
 
 import java.io.File;
 import java.util.List;
-import java.util.concurrent.CancellationException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -38,7 +37,6 @@ import ru.fazbear.campusdirectory.io.ContactCsvService;
 import ru.fazbear.campusdirectory.io.CsvLoadResult;
 import ru.fazbear.campusdirectory.io.CsvErrorCode;
 import ru.fazbear.campusdirectory.model.Contact;
-import ru.fazbear.campusdirectory.model.ContactValidator;
 import ru.fazbear.campusdirectory.model.CorporateContact;
 import ru.fazbear.campusdirectory.model.Editable;
 import ru.fazbear.campusdirectory.service.ContactDirectory;
@@ -181,11 +179,7 @@ public final class ContactDirectoryApp extends Application {
         operationProgress.setManaged(false);
         cancelOperationButton.setVisible(false);
         cancelOperationButton.setManaged(false);
-        cancelOperationButton.setOnAction(event -> {
-            if (activeTask != null) {
-                activeTask.cancel();
-            }
-        });
+        cancelOperationButton.setOnAction(event -> activeTask.cancel());
         statusLabel.setStyle("-fx-text-fill: #5f6368;");
         operationLabel.setStyle("-fx-text-fill: #5f6368;");
     }
@@ -213,8 +207,7 @@ public final class ContactDirectoryApp extends Application {
     }
 
     private void addContact() {
-        ContactDialog.showCreate(stage).ifPresent(contact -> {
-            directory.add(contact);
+        ContactDialog.showCreate(stage, directory::add).ifPresent(contact -> {
             refreshAll();
             selectContact(contact);
         });
@@ -225,11 +218,11 @@ public final class ContactDirectoryApp extends Application {
         if (!(selected instanceof Editable)) {
             return;
         }
-        ContactDialog.showEdit(stage, selected).ifPresent(replacement -> {
-            directory.update(selected, replacement);
-            refreshAll();
-            selectContact(replacement);
-        });
+        ContactDialog.showEdit(stage, selected, replacement -> directory.update(selected, replacement))
+                .ifPresent(replacement -> {
+                    refreshAll();
+                    selectContact(replacement);
+                });
     }
 
     private void deleteContact() {
@@ -251,16 +244,13 @@ public final class ContactDirectoryApp extends Application {
 
     private void findContact() {
         String name = prefixField.getText();
-        if (name.isBlank()) {
-            showError("Введите имя", "Для точного поиска требуется полное имя контакта.");
+        List<Contact> found;
+        try {
+            found = directory.findByName(name);
+        } catch (IllegalArgumentException error) {
+            showError("Некорректное имя", error.getMessage());
             return;
         }
-        if (name.strip().length() > ContactValidator.MAXIMUM_NAME_LENGTH) {
-            showError("Слишком длинное имя", "Допустимо до "
-                    + ContactValidator.MAXIMUM_NAME_LENGTH + " символов.");
-            return;
-        }
-        List<Contact> found = directory.findByName(name);
         refreshVisualization();
         if (found.isEmpty()) {
             table.getItems().clear();
@@ -337,15 +327,8 @@ public final class ContactDirectoryApp extends Application {
                 );
                 var generatedDirectory = new ContactDirectory();
                 updateMessage("Построение Trie...");
-                for (int index = 0; index < generated.length; index++) {
-                    if (isCancelled()) {
-                        throw new CancellationException("Генерация отменена");
-                    }
-                    generatedDirectory.add(generated[index]);
-                    if ((index + 1) % 100 == 0 || index + 1 == generated.length) {
-                        updateProgress(count + index + 1L, count * 2L);
-                    }
-                }
+                generatedDirectory.replaceAll(List.of(generated), this::isCancelled,
+                        completed -> updateProgress(count + completed, count * 2L));
                 return generatedDirectory;
             }
         };
@@ -464,9 +447,6 @@ public final class ContactDirectoryApp extends Application {
                         this::isCancelled,
                         (completed, total) -> updateProgress(completed, Math.max(total, 1))
                 );
-                if (isCancelled()) {
-                    throw new CancellationException("Загрузка отменена");
-                }
                 if (result.contacts().isEmpty() && !result.errors().isEmpty()) {
                     throw new ContactCsvException(CsvErrorCode.INVALID_CONTACT,
                             "В файле нет корректных контактов. Текущий набор сохранён. Ошибок: "
@@ -562,7 +542,7 @@ public final class ContactDirectoryApp extends Application {
             if (error instanceof ContactCsvException csvError) {
                 showError(header, csvError.getCode() + ": " + csvError.getMessage());
             } else {
-                showError(header, error == null ? "Неизвестная ошибка" : error.getMessage());
+                showError(header, error.getMessage());
             }
         });
     }
